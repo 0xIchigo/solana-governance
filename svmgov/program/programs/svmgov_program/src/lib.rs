@@ -9,6 +9,10 @@ mod utils;
 use anchor_lang::prelude::*;
 use instructions::*;
 
+pub use constants::BASIS_POINTS_MAX;
+pub use error::GovernanceError;
+pub use utils::get_epoch_slot_range;
+
 use ncn_snapshot::StakeMerkleLeaf;
 
 declare_id!("govYkyQ3ePtGULAtY6V75qjWE8UH4vCUVQ1W4HdCAZU");
@@ -28,6 +32,7 @@ pub mod svmgov_program {
         voting_epochs: u64,
         snapshot_epoch_extension: u64,
         snapshot_slot_offset: i64,
+        max_supporters: u32,
     ) -> Result<()> {
         ctx.accounts.initialize_config(
             max_title_length,
@@ -39,6 +44,7 @@ pub mod svmgov_program {
             voting_epochs,
             snapshot_epoch_extension,
             snapshot_slot_offset,
+            max_supporters,
             &ctx.bumps,
         )?;
         Ok(())
@@ -55,6 +61,7 @@ pub mod svmgov_program {
         voting_epochs: Option<u64>,
         snapshot_epoch_extension: Option<u64>,
         snapshot_slot_offset: Option<i64>,
+        max_supporters: Option<u32>,
     ) -> Result<()> {
         ctx.accounts.update_config(
             max_title_length,
@@ -66,6 +73,7 @@ pub mod svmgov_program {
             voting_epochs,
             snapshot_epoch_extension,
             snapshot_slot_offset,
+            max_supporters,
         )?;
         Ok(())
     }
@@ -102,6 +110,13 @@ pub mod svmgov_program {
 
     pub fn support_proposal(ctx: Context<SupportProposal>) -> Result<()> {
         ctx.accounts.support_proposal(&ctx.bumps)?;
+        Ok(())
+    }
+
+    /// Permissionless re-tally of a proposal's support at the current epoch.
+    /// Activates voting if the re-measured support now meets the threshold.
+    pub fn retally_support(ctx: Context<RetallySupport>) -> Result<()> {
+        ctx.accounts.retally_support()?;
         Ok(())
     }
 

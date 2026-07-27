@@ -419,6 +419,9 @@ enum Commands {
 
         #[arg(long, help = "Slot offset from epoch start for snapshot computation (can be negative)")]
         snapshot_slot_offset: i64,
+
+        #[arg(long, help = "Maximum number of validators allowed to support a proposal (1-2000)")]
+        max_supporters: u32,
     },
 
     #[command(
@@ -456,6 +459,9 @@ enum Commands {
 
         #[arg(long, help = "Slot offset from epoch start for snapshot computation (can be negative)")]
         snapshot_slot_offset: Option<i64>,
+
+        #[arg(long, help = "Maximum number of validators allowed to support a proposal (1-2000)")]
+        max_supporters: Option<u32>,
     },
 
     #[command(
@@ -784,6 +790,7 @@ async fn handle_command(cli: Cli) -> Result<()> {
             voting_epochs,
             snapshot_epoch_extension,
             snapshot_slot_offset,
+            max_supporters,
         } => {
             instructions::initialize_global_config(
                 cli.keypair,
@@ -797,6 +804,7 @@ async fn handle_command(cli: Cli) -> Result<()> {
                 *voting_epochs,
                 *snapshot_epoch_extension,
                 *snapshot_slot_offset,
+                *max_supporters,
                 squads_opts.clone(),
             )
             .await?;
@@ -811,6 +819,7 @@ async fn handle_command(cli: Cli) -> Result<()> {
             voting_epochs,
             snapshot_epoch_extension,
             snapshot_slot_offset,
+            max_supporters,
         } => {
             instructions::update_global_config(
                 cli.keypair,
@@ -824,6 +833,7 @@ async fn handle_command(cli: Cli) -> Result<()> {
                 *voting_epochs,
                 *snapshot_epoch_extension,
                 *snapshot_slot_offset,
+                *max_supporters,
                 squads_opts.clone(),
             )
             .await?;

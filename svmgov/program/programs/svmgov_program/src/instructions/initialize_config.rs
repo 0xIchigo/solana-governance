@@ -2,7 +2,8 @@ use anchor_lang::prelude::*;
 
 use crate::{
     constants::{
-        ANCHOR_DISCRIMINATOR, BASIS_POINTS_MAX, MAX_DESC_ACCOUNT_SIZE, MAX_TITLE_ACCOUNT_SIZE,
+        ANCHOR_DISCRIMINATOR, BASIS_POINTS_MAX, MAX_DESC_ACCOUNT_SIZE, MAX_SUPPORTERS_LIMIT,
+        MAX_TITLE_ACCOUNT_SIZE,
     },
     error::GovernanceError,
     state::GlobalConfig,
@@ -45,6 +46,7 @@ impl<'info> InitializeConfig<'info> {
         voting_epochs: u64,
         snapshot_epoch_extension: u64,
         snapshot_slot_offset: i64,
+        max_supporters: u32,
         bumps: &InitializeConfigBumps,
     ) -> Result<()> {
         validate_cluster_support_pct_min_bps(cluster_support_pct_min_bps)?;
@@ -52,6 +54,8 @@ impl<'info> InitializeConfig<'info> {
         validate_max_title_length(max_title_length)?;
 
         validate_max_description_length(max_description_length)?;
+
+        validate_max_supporters(max_supporters)?;
 
         self.global_config.set_inner(GlobalConfig {
             admin: self.admin.key(),
@@ -65,6 +69,7 @@ impl<'info> InitializeConfig<'info> {
             voting_epochs,
             snapshot_epoch_extension,
             snapshot_slot_offset,
+            max_supporters,
             bump: bumps.global_config,
         });
         Ok(())
@@ -95,6 +100,17 @@ pub fn validate_max_title_length(max_title_length: u16) -> Result<()> {
 pub fn validate_max_description_length(max_description_length: u16) -> Result<()> {
     if max_description_length == 0 || max_description_length as usize > MAX_DESC_ACCOUNT_SIZE {
         return Err(GovernanceError::InvalidMaxDescriptionLength.into());
+    }
+    Ok(())
+}
+
+/// Validate that the max supporters cap is greater than 0 and does not exceed
+/// `MAX_SUPPORTERS_LIMIT`. The upper bound keeps the full per-support re-tally
+/// within Solana's heap/compute limits; a zero cap would make every proposal
+/// impossible to support.
+pub fn validate_max_supporters(max_supporters: u32) -> Result<()> {
+    if max_supporters == 0 || max_supporters > MAX_SUPPORTERS_LIMIT {
+        return Err(GovernanceError::InvalidMaxSupporters.into());
     }
     Ok(())
 }

@@ -4,7 +4,7 @@ use crate::{
     error::GovernanceError,
     instructions::{
         validate_cluster_support_pct_min_bps, validate_max_description_length,
-        validate_max_title_length,
+        validate_max_supporters, validate_max_title_length,
     },
     state::GlobalConfig,
 };
@@ -12,15 +12,18 @@ use crate::{
 #[derive(Accounts)]
 pub struct UpdateConfig<'info> {
     #[account(
-        constraint = admin.key() == global_config.admin @ GovernanceError::UnauthorizedAdmin,
+        mut,
     )]
     pub admin: Signer<'info>,
+    /// CHECK: Validated after possible resize
     #[account(
         mut,
         seeds = [b"global_config"],
-        bump = global_config.bump,
+        bump
     )]
-    pub global_config: Account<'info, GlobalConfig>,
+    pub global_config: AccountInfo<'info>,
+
+    pub system_program: Program<'info, System>,
 }
 
 impl<'info> UpdateConfig<'info> {
@@ -35,8 +38,40 @@ impl<'info> UpdateConfig<'info> {
         voting_epochs: Option<u64>,
         snapshot_epoch_extension: Option<u64>,
         snapshot_slot_offset: Option<i64>,
+        max_supporters: Option<u32>,
     ) -> Result<()> {
-        let config = &mut self.global_config;
+        if self.requires_migration() {
+            // resize
+            let new_size = GlobalConfig::INIT_SPACE + 8;
+            let min_rent = Rent::get()?.minimum_balance(new_size);
+
+            if self.global_config.lamports() < min_rent {
+                anchor_lang::system_program::transfer(
+                    anchor_lang::context::CpiContext::new(
+                        self.system_program.to_account_info(),
+                        anchor_lang::system_program::Transfer {
+                            from: self.admin.to_account_info(),
+                            to: self.global_config.to_account_info(),
+                        },
+                    ),
+                    min_rent.checked_sub(self.global_config.lamports()).unwrap(),
+                )?;
+            }
+
+            self.global_config.realloc(new_size, true)?;
+
+            // ensure initialization of max supporters is valid during resize
+            validate_max_supporters(max_supporters.ok_or(GovernanceError::InvalidMaxSupporters)?)?;
+        }
+
+        let mut config =
+            GlobalConfig::try_deserialize(&mut self.global_config.try_borrow_data()?.as_ref())?;
+
+        require_keys_eq!(
+            config.admin,
+            self.admin.key(),
+            GovernanceError::UnauthorizedAdmin
+        );
 
         if let Some(v) = max_title_length {
             validate_max_title_length(v)?;
@@ -68,7 +103,23 @@ impl<'info> UpdateConfig<'info> {
         if let Some(v) = snapshot_slot_offset {
             config.snapshot_slot_offset = v;
         }
+        if let Some(v) = max_supporters {
+            validate_max_supporters(v)?;
+            config.max_supporters = v;
+        }
+
+        let mut data = self.global_config.try_borrow_mut_data()?;
+        let mut dst: &mut [u8] = &mut data;
+        GlobalConfig::try_serialize(&config, &mut dst)?;
 
         Ok(())
+    }
+
+    fn requires_migration(&self) -> bool {
+        if self.global_config.data_len() < GlobalConfig::INIT_SPACE + 8 {
+            true
+        } else {
+            false
+        }
     }
 }

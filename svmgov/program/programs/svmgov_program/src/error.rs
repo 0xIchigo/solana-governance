@@ -120,4 +120,10 @@ pub enum GovernanceError {
     InvalidBallotBox,
     #[msg("Snapshot slot must be in the future (greater than the current slot)")]
     SnapshotSlotNotInFuture,
+    #[msg("Proposal has no supporters to retally")]
+    NoSupporters,
+    #[msg("Proposal has reached the maximum number of supporters")]
+    SupporterLimitReached,
+    #[msg("Invalid max supporters (must be greater than 0 and less than or equal to the supporter limit)")]
+    InvalidMaxSupporters,
 }

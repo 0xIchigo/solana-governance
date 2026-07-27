@@ -33,6 +33,17 @@ pub struct Proposal {
     // Seeds for CPI
     pub proposal_seed: u64,
     pub vote_account_pubkey: Pubkey,
+    /// Vote-account pubkeys of every supporter, appended by `support_proposal`.
+    /// Kept so the tally can be rebuilt from current-epoch stake on every
+    /// support/retally (stake readings from earlier epochs are never reused).
+    ///
+    /// MUST remain the LAST field: Borsh serializes a Vec as
+    /// [u32 len][item][item]..., so the account can grow by exactly one entry
+    /// per support via realloc only if nothing is serialized after it.
+    /// `max_len(0)` keeps INIT_SPACE at the empty-list size (just the 4-byte
+    /// length prefix); growth is paid per-entry by each supporter.
+    #[max_len(0)]
+    pub supporters: Vec<Pubkey>,
 }
 
 impl Default for Proposal {
@@ -59,6 +70,7 @@ impl Default for Proposal {
             consensus_result: None,
             proposal_seed: 0,
             vote_account_pubkey: Pubkey::default(),
+            supporters: Vec::new(),
         }
     }
 }

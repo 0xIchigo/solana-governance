@@ -19,6 +19,15 @@ pub struct ProposalSupported {
 }
 
 #[event]
+pub struct ProposalRetallied {
+    pub proposal_id: Pubkey,
+    pub caller: Pubkey,
+    pub cluster_support_lamports: u64,
+    pub voting_activated: bool,
+    pub snapshot_slot: u64,
+}
+
+#[event]
 pub struct VoteCast {
     pub proposal_id: Pubkey,
     pub voter: Pubkey,

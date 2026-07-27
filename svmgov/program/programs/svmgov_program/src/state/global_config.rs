@@ -29,4 +29,9 @@ pub struct GlobalConfig {
     pub snapshot_slot_offset: i64,
     /// PDA bump seed
     pub bump: u8,
+    /// Maximum number of validators that may support a single proposal. Bounds
+    /// the per-transaction cost of re-tallying the `supporters` list so a
+    /// proposal can always be processed within Solana's heap/compute limits.
+    /// Must be in `1..=MAX_SUPPORTERS_LIMIT`.
+    pub max_supporters: u32,
 }

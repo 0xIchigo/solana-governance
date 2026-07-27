@@ -1,3 +1,5 @@
+use anchor_lang::prelude::Pubkey;
+
 /// Calculates the validator's stake weight in basis points (1 bp = 0.01%) relative to the cluster stake.
 ///
 /// This macro uses integer arithmetic to compute the stake weight by multiplying the validator's stake
@@ -11,19 +13,19 @@
 ///
 /// # Example
 ///
-/// ```rust
-/// let validator_stake = 40_001u64;
-/// let cluster_stake = 380_000_000u64;
-/// let weight_bp = stake_weight_bp!(validator_stake, cluster_stake)?;
-/// // Returns approximately 1 bp
+/// ```
+/// use svmgov_program::stake_weight_bp;
+///
+/// let weight_bp = stake_weight_bp!(40_001u64, 380_000_000u64).unwrap();
+/// assert_eq!(weight_bp, 1);
 /// ```
 #[macro_export]
 macro_rules! stake_weight_bp {
     ($validator_stake:expr, $cluster_stake:expr) => {{
         ($validator_stake as u128)
-            .checked_mul($crate::constants::BASIS_POINTS_MAX as u128)
+            .checked_mul($crate::BASIS_POINTS_MAX as u128)
             .and_then(|product| product.checked_div($cluster_stake as u128))
-            .ok_or($crate::error::GovernanceError::ArithmeticOverflow)
+            .ok_or($crate::GovernanceError::ArithmeticOverflow)
             .map(|result| result as u64)
     }};
 }
@@ -41,19 +43,19 @@ macro_rules! stake_weight_bp {
 ///
 /// # Example
 ///
-/// ```rust
-/// let stake = 1_000_000u64; // 1 SOL in lamports
-/// let basis_points = 2_500u64; // 25% of stake
-/// let vote_lamports = calculate_vote_lamports!(stake, basis_points)?;
-/// // Returns 250,000 lamports (25% of 1 SOL)
+/// ```
+/// use svmgov_program::calculate_vote_lamports;
+///
+/// let vote_lamports = calculate_vote_lamports!(1_000_000u64, 2_500u64).unwrap();
+/// assert_eq!(vote_lamports, 250_000); // 25% of 1 SOL
 /// ```
 #[macro_export]
 macro_rules! calculate_vote_lamports {
     ($stake:expr, $basis_points:expr) => {{
         ($stake as u128)
             .checked_mul($basis_points as u128)
-            .and_then(|product| product.checked_div($crate::constants::BASIS_POINTS_MAX as u128))
-            .ok_or($crate::error::GovernanceError::ArithmeticOverflow)
+            .and_then(|product| product.checked_div($crate::BASIS_POINTS_MAX as u128))
+            .ok_or($crate::GovernanceError::ArithmeticOverflow)
             .map(|result| result as u64)
     }};
 }
@@ -142,12 +144,11 @@ pub fn is_valid_github_link(link: &str) -> bool {
 ///
 /// # Example
 ///
-/// ```rust
-/// let (start, end) = get_epoch_slot_range(0);
-/// // Returns (0, 431999)
+/// ```
+/// use svmgov_program::get_epoch_slot_range;
 ///
-/// let (start, end) = get_epoch_slot_range(1);
-/// // Returns (432000, 863999)
+/// assert_eq!(get_epoch_slot_range(0), (0, 431_999));
+/// assert_eq!(get_epoch_slot_range(1), (432_000, 863_999));
 /// ```
 pub fn get_epoch_slot_range(epoch: u64) -> (u64, u64) {
     const SLOTS_PER_EPOCH: u64 = 432_000;
@@ -162,9 +163,11 @@ pub fn get_epoch_slot_range(epoch: u64) -> (u64, u64) {
 /// drives `snapshot_slot`, and from which `start_epoch` (anchor + 1) and
 /// `end_epoch` are derived.
 ///
-/// `support_proposal` calls this with the support epoch (`creation_epoch +
-/// max_support_epochs`, which equals `clock.epoch` when support activates), so the
-/// initial voting schedule includes the full `discussion_epochs` window.
+/// `support_proposal` and `retally_support` call this with the epoch in which
+/// the threshold-crossing call lands — any epoch inside the support window
+/// `[creation_epoch, creation_epoch + max_support_epochs]` — so the initial
+/// voting schedule includes the full `discussion_epochs` window from that
+/// point. A proposal that crosses the threshold early votes earlier.
 ///
 /// `flush_merkle_root` does NOT use this helper. It is an admin-only recovery path
 /// that intentionally re-anchors the snapshot/voting window forward off the *current*
@@ -216,10 +219,222 @@ pub fn compute_future_snapshot_slot(
     Ok(snapshot_slot)
 }
 
+/// Validates that `current_epoch` falls inside a proposal's support window:
+/// `creation_epoch <= current_epoch <= creation_epoch + max_support_epochs`
+/// (inclusive on both ends, so `max_support_epochs == 0` means "creation epoch
+/// only", exactly as the `GlobalConfig` field documents).
+///
+/// Returns `SupportPeriodExpired` past the window end and `NotInSupportPeriod`
+/// before the creation epoch (defensive: unreachable in practice since the
+/// clock is monotonic and `creation_epoch` is stamped from it).
+pub fn check_support_window(
+    current_epoch: u64,
+    creation_epoch: u64,
+    max_support_epochs: u64,
+) -> core::result::Result<(), crate::error::GovernanceError> {
+    if current_epoch < creation_epoch {
+        return Err(crate::error::GovernanceError::NotInSupportPeriod);
+    }
+    let window_end = creation_epoch
+        .checked_add(max_support_epochs)
+        .ok_or(crate::error::GovernanceError::ArithmeticOverflow)?;
+    if current_epoch > window_end {
+        return Err(crate::error::GovernanceError::SupportPeriodExpired);
+    }
+    Ok(())
+}
+
+/// Re-tallies total supporter stake by looking up each supporter's stake *at
+/// the current epoch* through `get_stake` (on-chain: the `sol_get_epoch_stake`
+/// syscall). Called on every support/retally so earlier epochs' stake readings
+/// are never reused — a supporter whose stake changed since they signed is
+/// counted at their current weight.
+pub fn tally_supporter_stakes<F>(
+    supporters: &[Pubkey],
+    get_stake: F,
+) -> core::result::Result<u64, crate::error::GovernanceError>
+where
+    F: Fn(&Pubkey) -> u64,
+{
+    let mut total: u64 = 0;
+    for vote_pubkey in supporters {
+        total = total
+            .checked_add(get_stake(vote_pubkey))
+            .ok_or(crate::error::GovernanceError::ArithmeticOverflow)?;
+    }
+    Ok(total)
+}
+
+/// Computes the minimum cluster stake (in lamports) a proposal must gather to
+/// activate voting: `cluster_stake * min_bps / 10_000`, using u128 internally
+/// so `u64::MAX * 10_000` cannot overflow.
+pub fn min_stake_threshold(
+    cluster_stake: u64,
+    min_bps: u64,
+) -> core::result::Result<u64, crate::error::GovernanceError> {
+    (cluster_stake as u128)
+        .checked_mul(min_bps as u128)
+        .and_then(|v| v.checked_div(crate::constants::BASIS_POINTS_MAX as u128))
+        .ok_or(crate::error::GovernanceError::ArithmeticOverflow)
+        .map(|result| result as u64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::error::GovernanceError;
+
+    // --- check_support_window ---
+
+    #[test]
+    fn support_window_accepts_creation_epoch() {
+        // Window start is inclusive: supporting in the epoch the proposal was
+        // created must be valid (this is all that worked when the gate was
+        // strict equality with max_support_epochs = 0).
+        assert!(check_support_window(100, 100, 3).is_ok());
+    }
+
+    #[test]
+    fn support_window_accepts_mid_window_epoch() {
+        assert!(check_support_window(102, 100, 3).is_ok());
+    }
+
+    #[test]
+    fn support_window_accepts_last_epoch_inclusive() {
+        // Window end is inclusive: creation 100 + max 3 => epoch 103 is valid.
+        assert!(check_support_window(103, 100, 3).is_ok());
+    }
+
+    #[test]
+    fn support_window_rejects_one_past_end() {
+        assert!(matches!(
+            check_support_window(104, 100, 3),
+            Err(GovernanceError::SupportPeriodExpired)
+        ));
+    }
+
+    #[test]
+    fn support_window_zero_max_means_creation_epoch_only() {
+        // Backward-compatible meaning of max_support_epochs = 0 (deployed config).
+        assert!(check_support_window(100, 100, 0).is_ok());
+        assert!(matches!(
+            check_support_window(101, 100, 0),
+            Err(GovernanceError::SupportPeriodExpired)
+        ));
+    }
+
+    #[test]
+    fn support_window_rejects_epoch_before_creation() {
+        // Defensive only: clock.epoch < creation_epoch cannot happen on-chain.
+        assert!(matches!(
+            check_support_window(99, 100, 3),
+            Err(GovernanceError::NotInSupportPeriod)
+        ));
+    }
+
+    #[test]
+    fn support_window_rejects_end_overflow() {
+        // creation + max overflowing u64 must surface a clean error, not wrap.
+        // current == creation so the lower-bound check passes and the overflow
+        // path is actually exercised.
+        assert!(matches!(
+            check_support_window(u64::MAX, u64::MAX, 1),
+            Err(GovernanceError::ArithmeticOverflow)
+        ));
+    }
+
+    // --- tally_supporter_stakes ---
+
+    #[test]
+    fn tally_sums_all_supporters_via_lookup() {
+        let a = Pubkey::new_unique();
+        let b = Pubkey::new_unique();
+        let c = Pubkey::new_unique();
+        let stake = |pk: &Pubkey| -> u64 {
+            if *pk == a {
+                100
+            } else if *pk == b {
+                250
+            } else {
+                7
+            }
+        };
+        assert_eq!(tally_supporter_stakes(&[a, b, c], stake).unwrap(), 357);
+    }
+
+    #[test]
+    fn tally_empty_list_is_zero() {
+        let called = std::cell::Cell::new(false);
+        let stake = |_: &Pubkey| -> u64 {
+            called.set(true);
+            1
+        };
+        assert_eq!(tally_supporter_stakes(&[], stake).unwrap(), 0);
+        assert!(!called.get(), "lookup must not run for an empty list");
+    }
+
+    #[test]
+    fn tally_reflects_current_stake_not_recorded_stake() {
+        // The core multi-epoch requirement: the same supporter list tallied
+        // against a different epoch's stake table gives a different total —
+        // nothing from the earlier reading is retained.
+        let a = Pubkey::new_unique();
+        let b = Pubkey::new_unique();
+        let supporters = [a, b];
+
+        let epoch_n = |pk: &Pubkey| -> u64 {
+            if *pk == a {
+                500
+            } else {
+                300
+            }
+        };
+        let epoch_n_plus_2 = |pk: &Pubkey| -> u64 {
+            if *pk == a {
+                50
+            } else {
+                300
+            }
+        };
+
+        assert_eq!(tally_supporter_stakes(&supporters, epoch_n).unwrap(), 800);
+        assert_eq!(
+            tally_supporter_stakes(&supporters, epoch_n_plus_2).unwrap(),
+            350
+        );
+    }
+
+    #[test]
+    fn tally_rejects_overflow() {
+        let supporters = [Pubkey::new_unique(), Pubkey::new_unique()];
+        let stake = |_: &Pubkey| -> u64 { u64::MAX };
+        assert!(matches!(
+            tally_supporter_stakes(&supporters, stake),
+            Err(GovernanceError::ArithmeticOverflow)
+        ));
+    }
+
+    // --- min_stake_threshold ---
+
+    #[test]
+    fn threshold_computes_bps_percentage() {
+        // 10% (1000 bps) of 1000 lamports = 100.
+        assert_eq!(min_stake_threshold(1_000, 1_000).unwrap(), 100);
+        // 0.5% (50 bps) of 1_000_000 = 5_000.
+        assert_eq!(min_stake_threshold(1_000_000, 50).unwrap(), 5_000);
+    }
+
+    #[test]
+    fn threshold_zero_bps_is_zero() {
+        assert_eq!(min_stake_threshold(u64::MAX, 0).unwrap(), 0);
+    }
+
+    #[test]
+    fn threshold_full_stake_at_max_bps_no_overflow() {
+        // u64::MAX * 10_000 exceeds u64 but must not overflow (u128 internally),
+        // and 100% of the cluster is the cluster itself.
+        assert_eq!(min_stake_threshold(u64::MAX, 10_000).unwrap(), u64::MAX);
+    }
 
     #[test]
     fn epoch_slot_range_is_correct() {

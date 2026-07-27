@@ -697,6 +697,10 @@
         {
           "name": "snapshot_slot_offset",
           "type": "i64"
+        },
+        {
+          "name": "max_supporters",
+          "type": "u32"
         }
       ]
     },
@@ -1289,6 +1293,12 @@
           "type": {
             "option": "i64"
           }
+        },
+        {
+          "name": "max_supporters",
+          "type": {
+            "option": "u32"
+          }
         }
       ]
     }
@@ -1793,6 +1803,21 @@
       "code": 6054,
       "name": "SnapshotSlotNotInFuture",
       "msg": "Snapshot slot must be in the future (greater than the current slot)"
+    },
+    {
+      "code": 6055,
+      "name": "NoSupporters",
+      "msg": "Proposal has no supporters to retally"
+    },
+    {
+      "code": 6056,
+      "name": "SupporterLimitReached",
+      "msg": "Proposal has reached the maximum number of supporters"
+    },
+    {
+      "code": 6057,
+      "name": "InvalidMaxSupporters",
+      "msg": "Invalid max supporters (must be greater than 0 and less than or equal to the supporter limit)"
     }
   ],
   "types": [
@@ -1913,6 +1938,17 @@
               "Slot offset from epoch start for snapshot computation (can be negative)"
             ],
             "type": "i64"
+          },
+          {
+            "name": "max_supporters",
+            "docs": [
+              "Maximum number of validators that may support a single proposal. Bounds",
+              "the per-transaction cost of re-tallying the `supporters` list (which is",
+              "deserialized and re-measured in full on every support/retally) so a",
+              "proposal can always be processed within Solana's heap/compute limits.",
+              "Must be in `1..=MAX_SUPPORTERS_LIMIT`."
+            ],
+            "type": "u32"
           },
           {
             "name": "bump",

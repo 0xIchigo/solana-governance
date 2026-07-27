@@ -24,6 +24,8 @@ use crate::{
 const MAX_TITLE_LENGTH: u16 = 200;
 const MAX_DESCRIPTION_LENGTH: u16 = 500;
 const BASIS_POINTS_MAX: u64 = 10_000;
+// Keep in sync with the program's MAX_SUPPORTERS_LIMIT.
+const MAX_SUPPORTERS_LIMIT: u32 = 2_000;
 
 /// Validates the bounded config fields against the same limits the program enforces.
 /// Only the provided (`Some`) fields are checked, so this works for both the full set
@@ -32,6 +34,7 @@ fn validate_config_values(
     max_title_length: Option<u16>,
     max_description_length: Option<u16>,
     cluster_support_pct_min_bps: Option<u64>,
+    max_supporters: Option<u32>,
 ) -> Result<()> {
     if let Some(v) = max_title_length {
         if v == 0 || v > MAX_TITLE_LENGTH {
@@ -54,6 +57,14 @@ fn validate_config_values(
             return Err(anyhow!(
                 "cluster_support_pct_min_bps must be between 0 and {} basis points",
                 BASIS_POINTS_MAX
+            ));
+        }
+    }
+    if let Some(v) = max_supporters {
+        if v == 0 || v > MAX_SUPPORTERS_LIMIT {
+            return Err(anyhow!(
+                "max_supporters must be between 1 and {}",
+                MAX_SUPPORTERS_LIMIT
             ));
         }
     }
@@ -108,12 +119,14 @@ pub async fn initialize_global_config(
     voting_epochs: u64,
     snapshot_epoch_extension: u64,
     snapshot_slot_offset: i64,
+    max_supporters: u32,
     squads: Option<SquadsCliOpts>,
 ) -> Result<()> {
     validate_config_values(
         Some(max_title_length),
         Some(max_description_length),
         Some(cluster_support_pct_min_bps),
+        Some(max_supporters),
     )?;
 
     let (payer, program) = setup_admin(keypair, rpc_url)?;
@@ -139,6 +152,7 @@ pub async fn initialize_global_config(
             voting_epochs,
             snapshot_epoch_extension,
             snapshot_slot_offset,
+            max_supporters,
         })
         .accounts(accounts::InitializeConfig {
             admin,
@@ -179,12 +193,14 @@ pub async fn update_global_config(
     voting_epochs: Option<u64>,
     snapshot_epoch_extension: Option<u64>,
     snapshot_slot_offset: Option<i64>,
+    max_supporters: Option<u32>,
     squads: Option<SquadsCliOpts>,
 ) -> Result<()> {
     validate_config_values(
         max_title_length,
         max_description_length,
         cluster_support_pct_min_bps,
+        max_supporters,
     )?;
 
     let (payer, program) = setup_admin(keypair, rpc_url)?;
@@ -206,10 +222,12 @@ pub async fn update_global_config(
             voting_epochs,
             snapshot_epoch_extension,
             snapshot_slot_offset,
+            max_supporters,
         })
         .accounts(accounts::UpdateConfig {
             admin,
             global_config: global_config_pda,
+            system_program: system_program::ID,
         })
         .instructions()?;
 
@@ -359,6 +377,7 @@ pub async fn show_global_config(rpc_url: Option<String>) -> Result<()> {
         "  snapshot_slot_offset:        {}",
         config.snapshot_slot_offset
     );
+    println!("  max_supporters:              {}", config.max_supporters);
 
     Ok(())
 }

@@ -625,6 +625,10 @@ export type SvmgovProgram = {
         {
           "name": "snapshotSlotOffset",
           "type": "i64"
+        },
+        {
+          "name": "maxSupporters",
+          "type": "u32"
         }
       ]
     },
@@ -1146,6 +1150,12 @@ export type SvmgovProgram = {
           "type": {
             "option": "i64"
           }
+        },
+        {
+          "name": "maxSupporters",
+          "type": {
+            "option": "u32"
+          }
         }
       ]
     }
@@ -1657,6 +1667,17 @@ export type SvmgovProgram = {
               "Slot offset from epoch start for snapshot computation (can be negative)"
             ],
             "type": "i64"
+          },
+          {
+            "name": "maxSupporters",
+            "docs": [
+              "Maximum number of validators that may support a single proposal. Bounds",
+              "the per-transaction cost of re-tallying the `supporters` list (which is",
+              "deserialized and re-measured in full on every support/retally) so a",
+              "proposal can always be processed within Solana's heap/compute limits.",
+              "Must be in `1..=MAX_SUPPORTERS_LIMIT`."
+            ],
+            "type": "u32"
           },
           {
             "name": "bump",

@@ -1,8 +1,8 @@
 name: CI
 
-# Compile-checks and tests both CLIs on every pull request and on pushes to
-# main, so build breakage and test regressions are caught before a release tag
-# is cut. No binaries are uploaded here.
+# Compile-checks and tests both CLIs and the svmgov program on every pull
+# request and on pushes to main, so build breakage and test regressions are
+# caught before a release tag is cut. No binaries are uploaded here.
 on:
   pull_request:
   push:
@@ -18,6 +18,8 @@ concurrency:
 
 env:
   RUST_VERSION: "1.93.1"
+  # Agave release providing cargo-build-sbf for the on-chain program build.
+  AGAVE_VERSION: "3.1.10"
   # Build-time program IDs for the ncn CLI (defaults from ncn/scripts/install-ncn-cli.sh).
   RESTAKING_PROGRAM_ID: RestkWeAVL8fRGgzhfeoqFhsqKRchg6aa1XrcH96z4Q
   VAULT_PROGRAM_ID: Vau1t6sLNxnzB7ZDsef8TLbPLfyZMYXH8WTNqUdm9g8
@@ -81,4 +83,38 @@ jobs:
 
       - name: Test svmgov CLI
         working-directory: svmgov/cli
+        run: cargo test --locked
+
+  program:
+    name: Build & test svmgov program
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          # See the note on rustflags in the build job above.
+          rustflags: ""
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: svmgov/program
+
+      # cargo-build-sbf ships with the Agave release and downloads its own
+      # pinned platform-tools (SBF rustc) on first use, independent of the
+      # host toolchain installed above.
+      - name: Install Agave toolchain
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v${AGAVE_VERSION}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Build svmgov program
+        working-directory: svmgov/program
+        run: cargo-build-sbf -- --locked -p svmgov_program
+
+      # The LiteSVM integration suites load the target/deploy/svmgov_program.so
+      # built above; keep this step after the SBF build.
+      - name: Test svmgov program (LiteSVM)
+        working-directory: svmgov/program
         run: cargo test --locked

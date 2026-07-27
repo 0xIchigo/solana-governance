@@ -12,14 +12,28 @@ use crate::{
     error::GovernanceError,
     events::ProposalSupported,
     state::{GlobalConfig, Proposal, Support},
-    utils::{compute_future_snapshot_slot, proposal_target_epoch},
+    utils::{
+        check_support_window, compute_future_snapshot_slot, min_stake_threshold,
+        proposal_target_epoch, tally_supporter_stakes,
+    },
 };
 
 #[derive(Accounts)]
 pub struct SupportProposal<'info> {
     #[account(mut)]
     pub signer: Signer<'info>, // Proposal supporter (validator)
-    #[account(mut)]
+    #[account(
+        mut,
+        // Grow the proposal by exactly one supporter entry (32 bytes). The
+        // supporter pays the rent delta for their own slice. INIT_SPACE
+        // already includes the Vec's 4-byte length prefix (max_len(0)), so
+        // total size is disc + fixed fields + 32 per supporter.
+        realloc = ANCHOR_DISCRIMINATOR
+            + Proposal::INIT_SPACE
+            + (proposal.supporters.len() + 1) * core::mem::size_of::<Pubkey>(),
+        realloc::payer = signer,
+        realloc::zero = false,
+    )]
     pub proposal: Account<'info, Proposal>,
     #[account(
         init,
@@ -76,9 +90,21 @@ impl<'info> SupportProposal<'info> {
             GovernanceError::ProposalClosed
         );
 
+        // Support is accepted anywhere inside the window
+        // [creation_epoch, creation_epoch + max_support_epochs], inclusive.
+        check_support_window(
+            clock.epoch,
+            self.proposal.creation_epoch,
+            self.global_config.max_support_epochs,
+        )?;
+
+        // Cap the supporter count. Every support/retally re-measures the whole
+        // list in a single transaction, so an unbounded list would eventually
+        // exceed Solana's heap/compute limits and brick the proposal. Checked
+        // before the new entry is recorded so the list never exceeds the cap.
         require!(
-            clock.epoch == self.proposal.creation_epoch + self.global_config.max_support_epochs,
-            GovernanceError::NotInSupportPeriod
+            (self.proposal.supporters.len() as u64) < self.global_config.max_supporters as u64,
+            GovernanceError::SupporterLimitReached
         );
 
         // Ensure signer is the node identity of the vote account, so a supporter
@@ -100,17 +126,33 @@ impl<'info> SupportProposal<'info> {
         );
         drop(vote_account_data);
 
-        // assuming this returns in lamports
+        // Support may span multiple epochs, so stake readings recorded in
+        // earlier epochs are no longer valid: rebuild the ENTIRE tally from
+        // every prior supporter's stake at the *current* epoch (via the
+        // sol_get_epoch_stake syscall — needs only the pubkey, not the
+        // account), then add the new supporter measured at the same epoch.
+        let prior_stake = tally_supporter_stakes(&self.proposal.supporters, |pk| {
+            get_epoch_stake_for_vote_account(pk)
+        })?;
         let supporter_stake = get_epoch_stake_for_vote_account(self.spl_vote_account.key);
-
-        let proposal_account = &mut self.proposal;
-        let new_support_stake = proposal_account
-            .cluster_support_lamports
+        // A supporter must clear the same stake floor as a proposal author.
+        // This blocks a zero-/dust-stake spam attack that would otherwise let
+        // an attacker cheaply fill the supporters list to the cap (or drive up
+        // re-tally cost) without contributing meaningful stake.
+        require!(
+            supporter_stake >= self.global_config.min_proposal_stake_lamports,
+            GovernanceError::NotEnoughStake
+        );
+        let new_support_stake = prior_stake
             .checked_add(supporter_stake)
             .ok_or(GovernanceError::ArithmeticOverflow)?;
 
-        // update the cluster support
+        let proposal_account = &mut self.proposal;
         proposal_account.cluster_support_lamports = new_support_stake;
+        // Record the supporter's vote account so future support/retally calls
+        // can re-measure them. The realloc constraint above already grew the
+        // account by exactly this entry.
+        proposal_account.supporters.push(self.spl_vote_account.key());
 
         // Initialize the support account
         self.support.set_inner(Support {
@@ -119,110 +161,134 @@ impl<'info> SupportProposal<'info> {
             bump: bumps.support,
         });
 
-        let cluster_stake = get_epoch_total_stake();
+        // Threshold is measured against the current epoch's total stake — the
+        // same epoch every supporter above was just re-measured at, so
+        // numerator and denominator can never mix epochs.
+        let cluster_min_stake = min_stake_threshold(
+            get_epoch_total_stake(),
+            self.global_config.cluster_support_pct_min_bps,
+        )?;
 
-        let cluster_min_stake = (cluster_stake as u128)
-            .checked_mul(self.global_config.cluster_support_pct_min_bps as u128)
-            .and_then(|v| v.checked_div(10_000))
-            .ok_or(GovernanceError::ArithmeticOverflow)
-            .map(|result| result as u64)?;
-
-        let mut current_voting_emit = proposal_account.voting;
         let mut snapshot_slot = 0;
-        proposal_account.voting = if new_support_stake >= cluster_min_stake {
-            // this is for emit checks
-            current_voting_emit = true;
-
-            // At this point `clock.epoch == creation_epoch + max_support_epochs`
-            // (enforced above), i.e. clock.epoch is the support epoch. Deriving the
-            // schedule through the shared helper keeps it identical to the schedule
-            // flush_merkle_root reconstructs from creation_epoch + max_support_epochs.
-            let target_epoch = proposal_target_epoch(
-                clock.epoch,
-                self.global_config.discussion_epochs,
-                self.global_config.snapshot_epoch_extension,
+        if new_support_stake >= cluster_min_stake {
+            snapshot_slot = activate_voting(
+                &mut self.proposal,
+                &self.global_config,
+                &self.signer,
+                &self.ballot_box,
+                &self.ballot_program,
+                &self.program_config,
+                &self.system_program,
+                &clock,
             )?;
-            // SECURITY: enforce the future-slot invariant before mutating proposal
-            // state. The init_ballot_box CPI below is skipped whenever `ballot_box`
-            // already exists, so this re-check prevents a proposal from being bound
-            // onto an already-finalized ConsensusResult for a past slot.
-            snapshot_slot = compute_future_snapshot_slot(
-                target_epoch,
-                self.global_config.snapshot_slot_offset,
-                clock.slot,
-            )?;
-
-            // SECURITY: bind `ballot_box` to the exact PDA implied by the snapshot
-            // slot so a caller cannot pass an arbitrary non-empty account to skip
-            // the init_ballot_box CPI (and its validation) below.
-            let (expected_ballot_box, _) = Pubkey::find_program_address(
-                &[b"BallotBox", &snapshot_slot.to_le_bytes()],
-                &self.ballot_program.key,
-            );
-            require_keys_eq!(
-                self.ballot_box.key(),
-                expected_ballot_box,
-                GovernanceError::InvalidBallotBox
-            );
-
-            // start voting 1 epoch after snapshot
-            // checking in any vote or others is start_epoch <= current_epoch < end_epoch
-            proposal_account.start_epoch = target_epoch + 1;
-            proposal_account.end_epoch = target_epoch + 1 + self.global_config.voting_epochs;
-            proposal_account.snapshot_slot = snapshot_slot; // 1000 slots into snapshot
-
-            let (consensus_result_pda, _) = Pubkey::find_program_address(
-                &[b"ConsensusResult", &snapshot_slot.to_le_bytes()],
-                &self.ballot_program.key,
-            );
-
-            proposal_account.consensus_result = Some(consensus_result_pda);
-
-            if self.ballot_box.data_is_empty() {
-                // Create seed components with sufficient lifetime
-                let proposal_seed_val = proposal_account.proposal_seed.to_le_bytes();
-                let vote_account_key = proposal_account.vote_account_pubkey.key();
-
-                let seeds: &[&[u8]] = &[
-                    b"proposal".as_ref(),
-                    &proposal_seed_val,
-                    vote_account_key.as_ref(),
-                    &[proposal_account.proposal_bump],
-                ];
-                let signer_seeds = &[&seeds[..]];
-
-                let cpi_ctx = CpiContext::new_with_signer(
-                    self.ballot_program.to_account_info(),
-                    ncn_snapshot::cpi::accounts::InitBallotBox {
-                        payer: self.signer.to_account_info(),
-                        proposal: proposal_account.to_account_info(),
-                        ballot_box: self.ballot_box.to_account_info(),
-                        program_config: self.program_config.to_account_info(),
-                        system_program: self.system_program.to_account_info(),
-                    },
-                    signer_seeds,
-                );
-                ncn_snapshot::cpi::init_ballot_box(
-                    cpi_ctx,
-                    snapshot_slot,
-                    proposal_account.proposal_seed,
-                    proposal_account.vote_account_pubkey,
-                )?;
-            }
-
-            true
-        } else {
-            false
-        };
+        }
 
         emit!(ProposalSupported {
             proposal_id: self.proposal.key(),
             supporter: self.signer.key(),
             cluster_support_lamports: new_support_stake,
-            voting_activated: current_voting_emit,
+            voting_activated: self.proposal.voting,
             snapshot_slot: snapshot_slot,
         });
 
         Ok(())
     }
+}
+
+/// Shared activation path for `support_proposal` and `retally_support`: fixes
+/// the voting schedule, binds the ballot box, and flips `voting` on.
+///
+/// The schedule anchors on `clock.epoch` — the epoch in which the
+/// threshold-crossing call lands, which may be any epoch inside the support
+/// window. A proposal that gathers support quickly therefore votes earlier
+/// than one that crosses the threshold on the window's last epoch.
+/// (`flush_merkle_root` is unaffected: it is an admin-only recovery path that
+/// re-anchors off the current epoch and never reconstructs this schedule.)
+///
+/// Returns the computed snapshot slot.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn activate_voting<'info>(
+    proposal: &mut Account<'info, Proposal>,
+    global_config: &GlobalConfig,
+    payer: &Signer<'info>,
+    ballot_box: &UncheckedAccount<'info>,
+    ballot_program: &UncheckedAccount<'info>,
+    program_config: &UncheckedAccount<'info>,
+    system_program: &Program<'info, System>,
+    clock: &Clock,
+) -> Result<u64> {
+    let target_epoch = proposal_target_epoch(
+        clock.epoch,
+        global_config.discussion_epochs,
+        global_config.snapshot_epoch_extension,
+    )?;
+    // SECURITY: enforce the future-slot invariant before mutating proposal
+    // state. The init_ballot_box CPI below is skipped whenever `ballot_box`
+    // already exists, so this re-check prevents a proposal from being bound
+    // onto an already-finalized ConsensusResult for a past slot.
+    let snapshot_slot = compute_future_snapshot_slot(
+        target_epoch,
+        global_config.snapshot_slot_offset,
+        clock.slot,
+    )?;
+
+    // SECURITY: bind `ballot_box` to the exact PDA implied by the snapshot
+    // slot so a caller cannot pass an arbitrary non-empty account to skip
+    // the init_ballot_box CPI (and its validation) below.
+    let (expected_ballot_box, _) = Pubkey::find_program_address(
+        &[b"BallotBox", &snapshot_slot.to_le_bytes()],
+        ballot_program.key,
+    );
+    require_keys_eq!(
+        ballot_box.key(),
+        expected_ballot_box,
+        GovernanceError::InvalidBallotBox
+    );
+
+    // start voting 1 epoch after snapshot
+    // checking in any vote or others is start_epoch <= current_epoch < end_epoch
+    proposal.start_epoch = target_epoch + 1;
+    proposal.end_epoch = target_epoch + 1 + global_config.voting_epochs;
+    proposal.snapshot_slot = snapshot_slot; // 1000 slots into snapshot
+
+    let (consensus_result_pda, _) = Pubkey::find_program_address(
+        &[b"ConsensusResult", &snapshot_slot.to_le_bytes()],
+        ballot_program.key,
+    );
+    proposal.consensus_result = Some(consensus_result_pda);
+    proposal.voting = true;
+
+    if ballot_box.data_is_empty() {
+        // Create seed components with sufficient lifetime
+        let proposal_seed_val = proposal.proposal_seed.to_le_bytes();
+        let vote_account_key = proposal.vote_account_pubkey.key();
+
+        let seeds: &[&[u8]] = &[
+            b"proposal".as_ref(),
+            &proposal_seed_val,
+            vote_account_key.as_ref(),
+            &[proposal.proposal_bump],
+        ];
+        let signer_seeds = &[&seeds[..]];
+
+        let cpi_ctx = CpiContext::new_with_signer(
+            ballot_program.to_account_info(),
+            ncn_snapshot::cpi::accounts::InitBallotBox {
+                payer: payer.to_account_info(),
+                proposal: proposal.to_account_info(),
+                ballot_box: ballot_box.to_account_info(),
+                program_config: program_config.to_account_info(),
+                system_program: system_program.to_account_info(),
+            },
+            signer_seeds,
+        );
+        ncn_snapshot::cpi::init_ballot_box(
+            cpi_ctx,
+            snapshot_slot,
+            proposal.proposal_seed,
+            proposal.vote_account_pubkey,
+        )?;
+    }
+
+    Ok(snapshot_slot)
 }

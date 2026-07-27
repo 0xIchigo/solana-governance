@@ -19,3 +19,29 @@ idl-build = ["anchor-lang/idl-build"]
 anchor-lang = { version = "0.31.1", features = ["init-if-needed"]}
 ncn-snapshot = { path = "../../../../ncn/programs/ncn-snapshot", features = ["cpi"] }
 solana-vote-interface = { version = "=5.0.0", default-features = false, features = ["bincode"] }
+
+[dev-dependencies]
+# Keep versions aligned with litesvm 0.15 (sol_get_epoch_stake configuration).
+bincode = "1.3"
+borsh = "1.5"
+# Force five8 → five8_core 1.x so DecodeError implements core::error::Error
+# (five8 1.0 accepts 0.1, which breaks solana-keypair against solana-signature 3.4).
+five8_core = "1.0"
+litesvm = "0.15.0"
+sha2 = "0.10"
+solana-account = "4.3.0"
+solana-address = ">=2.2, <3"
+solana-clock = "3.1.1"
+solana-compute-budget-interface = "3.0.0"
+solana-instruction = "3.4.0"
+solana-instruction-error = "2.4.0"
+solana-keypair = "3.1.2"
+solana-message = "4.2.4"
+solana-native-token = "3.0.0"
+solana-sdk-ids = "3.1.0"
+solana-signer = "3.0.1"
+solana-transaction = "4.1.5"
+solana-transaction-error = "3.3.1"
+# Host-side vote state helpers for LiteSVM tests (program dep stays on 5.0.0).
+solana-vote-interface-host = { package = "solana-vote-interface", version = "6.0.3", features = ["bincode"] }
+test-log = "0.2"
