@@ -5,16 +5,16 @@ use anchor_client::{
 };
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
+use cli::ledger::{
+    ledger_utils::{get_bank_from_ledger, get_bank_from_snapshot_at_slot},
+    SnapshotPaths,
+};
 use cli::{generate_meta_merkle_snapshot, utils::*, MetaMerkleSnapshot};
 use log::info;
 use ncn_snapshot::{Ballot, BallotBox, ConsensusResult, MetaMerkleProof, ProgramConfig};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::{collections::HashMap, fs, process::Command, thread, time::Duration};
-use tip_router_operator_cli::{
-    cli::SnapshotPaths,
-    ledger_utils::{get_bank_from_ledger, get_bank_from_snapshot_at_slot},
-};
 use tokio::runtime::Builder;
 
 /// Solana Governance Voter Snapshot CLI.
@@ -1199,7 +1199,7 @@ fn main() -> Result<()> {
                 backup_snapshots_dir,
             } = cli.get_snapshot_paths();
 
-            get_bank_from_ledger(
+            let _ = get_bank_from_ledger(
                 cli.operator_address,
                 &ledger_path,
                 account_paths,
@@ -1420,7 +1420,7 @@ fn main() -> Result<()> {
                         );
                         let save_snapshot = true;
                         let account_paths = vec![backup_ledger_dir.clone()];
-                        get_bank_from_ledger(
+                        let _ = get_bank_from_ledger(
                             cli.operator_address,
                             &backup_ledger_dir,
                             account_paths,
