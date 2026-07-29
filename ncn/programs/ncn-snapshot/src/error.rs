@@ -34,4 +34,6 @@ pub enum ErrorCode {
     BallotTalliesNotMaxLength,
     #[msg("Invalid proposal")]
     InvalidProposal,
+    #[msg("Current slot must be greater than snapshot slot")]
+    SnapshotSlotNotReached
 }

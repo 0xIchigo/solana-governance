@@ -814,7 +814,7 @@ fn main() {
     let operator_keypairs: Vec<Keypair> = (0..10).map(|_| Keypair::new()).collect();
 
     let path = format!(
-        "{}/src/fixtures/meta_merkle_340850340.zip",
+        "{}/src/fixtures/meta_merkle-477641713.zip",
         env!("CARGO_MANIFEST_DIR")
     );
     println!("path {}", path);

@@ -46,7 +46,7 @@ async fn e2e_binary_endpoints() -> anyhow::Result<()> {
     let snapshot_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
-        .join("tests/src/fixtures/meta_merkle_340850340.zip");
+        .join("tests/src/fixtures/meta_merkle-477641713.zip");
     let bytes = tokio::fs::read(&snapshot_path).await?;
     let (snapshot, snapshot_hash) =
         cli::MetaMerkleSnapshot::read_from_bytes_with_hash(bytes.clone(), true)?;
@@ -101,8 +101,8 @@ async fn e2e_binary_endpoints() -> anyhow::Result<()> {
     // Test GET /voter
     let voter: serde_json::Value = client
         .get(format!(
-            "{}/voter/AECaNinQ6ptWzZcD9WYFimvZuf37kuviUuNGGA4hgWDz?network=testnet&slot=340850340",
-            base_url
+            "{}/voter/2UWuPRCUZHgDt4PdiarRx8YPBD5gUMaVA5EcPeg1sVzL?network=testnet&slot={}",
+            base_url, slot
         ))
         .send()
         .await?
@@ -113,18 +113,18 @@ async fn e2e_binary_endpoints() -> anyhow::Result<()> {
     let expected = serde_json::json!({
         "network": "testnet",
         "snapshot_slot": slot,
-        "voting_wallet": "AECaNinQ6ptWzZcD9WYFimvZuf37kuviUuNGGA4hgWDz",
+        "voting_wallet": "2UWuPRCUZHgDt4PdiarRx8YPBD5gUMaVA5EcPeg1sVzL",
         "vote_accounts": [
             {
-                "vote_account": "Mvrzoe3cvKFyY8WqVa7Y4ZGnH3KTdEAcez7esRYY67r",
-                "active_stake": 32615567722979u64
+                "vote_account": "2f9C9AU8nFRKUub8NHToNiZzcwmYiNeipVuP8akKgRVv",
+                "active_stake": 750007077444680u64
             }
         ],
         "stake_accounts": [
             {
-                "stake_account": "Fu12SHuZyaQ4B1or3hFRmx5gqLuGhxTWUjdH98oYRK2N",
-                "vote_account": "Mvrzoe3cvKFyY8WqVa7Y4ZGnH3KTdEAcez7esRYY67r",
-                "active_stake": 9997717120u64
+                "stake_account": "CRWEzRX16uHoBLF9HKawBNnSTiJ2soa2MaPDzGHUw8P5",
+                "vote_account": "2f9C9AU8nFRKUub8NHToNiZzcwmYiNeipVuP8akKgRVv",
+                "active_stake": 1997717120u64
             }
         ]
     });
@@ -133,8 +133,8 @@ async fn e2e_binary_endpoints() -> anyhow::Result<()> {
     // Test GET /proof/vote_account (compare full JSON)
     let vote_proof: serde_json::Value = client
         .get(format!(
-            "{}/proof/vote_account/Mvrzoe3cvKFyY8WqVa7Y4ZGnH3KTdEAcez7esRYY67r?network=testnet&slot=340850340",
-            base_url
+            "{}/proof/vote_account/2f9C9AU8nFRKUub8NHToNiZzcwmYiNeipVuP8akKgRVv?network=testnet&slot={}",
+            base_url, slot
         ))
         .send()
         .await?
@@ -145,19 +145,18 @@ async fn e2e_binary_endpoints() -> anyhow::Result<()> {
         "network": "testnet",
         "snapshot_slot": slot,
         "meta_merkle_leaf": {
-            "voting_wallet": "AECaNinQ6ptWzZcD9WYFimvZuf37kuviUuNGGA4hgWDz",
-            "vote_account": "Mvrzoe3cvKFyY8WqVa7Y4ZGnH3KTdEAcez7esRYY67r",
-            "stake_merkle_root": "DkSTcvau7xpiZBHHtUSg52utSqEH2qa2NRfBEAAz5fya",
-            "active_stake": 32615567722979u64
+            "voting_wallet": "2UWuPRCUZHgDt4PdiarRx8YPBD5gUMaVA5EcPeg1sVzL",
+            "vote_account": "2f9C9AU8nFRKUub8NHToNiZzcwmYiNeipVuP8akKgRVv",
+            "stake_merkle_root": "HDrvsou3a84AWMkgoj5PktCb3LNJ7BTMHnoK1K2sQpL5",
+            "active_stake": 750007077444680u64
         },
         "meta_merkle_proof": [
-          "ZVvsLpYErGY7dVZ9h5Wpugr5p5EJG31Jkv8NVo3ueYY",
-          "obPoamwG5ixNRLisCdFEugYiFAaHqVScTUpLiwoizRt",
-          "GJtfCth4kTFbRtgGqTMBUTt6r3RkQwZGpQ4nNj1HZSYF",
-          "Fs2fTYw8MYwb4JqrDfpwgfuJ5DQrepEzexX1VQNBgLbk",
-          "Fo5LHwsywxsa7yBm3ku9Cqiz3JrSgyzx7z8sRF5rYd2p",
-          "xSdU8zuoLHykjN9r1wT5kygjamnWDQhiu4Nqj7feGM6",
-          "BvaAe2fzv93BJgtUdEMtmgiuos5CDwv9rKk9Kk3gT4fM"
+          "HRgcBMi6bf4B3R1F3FRJXhw7KKB6zmPZFgbc8JFGxr3a",
+          "3MGo7vHxTv5TcyJktspt8dtxeePRfVHjq9JshZVMYuYb",
+          "5eLRaUe4qYqKhcq7xkFomhE67n8dBnUfjBjwjKHVh3Af",
+          "GiFE2d8LBs8UpdDDtmHvD2nEHxSKym86ag5T7QyDGkQb",
+          "GvSYrgseQJNffYLHcSPoCUAvLGEn8tAiXJRWqPRNDdwT",
+          "EP1yxcLZ93kj4kjtXDiwE657RnLyXLC6RLxoCwbYFR2U"
         ]
     });
     assert_eq!(vote_proof, expected_vote_proof);
@@ -165,8 +164,8 @@ async fn e2e_binary_endpoints() -> anyhow::Result<()> {
     // Test GET /proof/stake_account
     let stake_proof: serde_json::Value = client
         .get(format!(
-            "{}/proof/stake_account/Fu12SHuZyaQ4B1or3hFRmx5gqLuGhxTWUjdH98oYRK2N?network=testnet&slot=340850340",
-            base_url
+            "{}/proof/stake_account/CRWEzRX16uHoBLF9HKawBNnSTiJ2soa2MaPDzGHUw8P5?network=testnet&slot={}",
+            base_url, slot
         ))
         .send()
         .await?
@@ -178,15 +177,17 @@ async fn e2e_binary_endpoints() -> anyhow::Result<()> {
         "network": "testnet",
         "snapshot_slot": slot,
         "stake_merkle_leaf": {
-            "voting_wallet": "AECaNinQ6ptWzZcD9WYFimvZuf37kuviUuNGGA4hgWDz",
-            "stake_account": "Fu12SHuZyaQ4B1or3hFRmx5gqLuGhxTWUjdH98oYRK2N",
-            "active_stake": 9997717120u64
+            "voting_wallet": "2UWuPRCUZHgDt4PdiarRx8YPBD5gUMaVA5EcPeg1sVzL",
+            "stake_account": "CRWEzRX16uHoBLF9HKawBNnSTiJ2soa2MaPDzGHUw8P5",
+            "active_stake": 1997717120u64
         },
         "stake_merkle_proof": [
-            "2vQkMCm3ibpz8MMinkBPS8kt42TGgm6zdqUzrBG645iU",
-            "CfeSpauiU21P7JPmXTvQXfiwFsGRQED551DJsRmeN5f6",
+            "5KWNKVFqfngU4sKzRCteHEjbPqv1uJY6bfSXDBTUqpNf",
+            "Gx2bHJKWSAAsH3fK2sxUVmkSide7ovntqGNtoF4oaXgu",
+            "8kW9QLUWyvcBeTwucgaXHBknbmFxFAecQkJ8VFbEXFnD",
+            "Lkxp3Upe5Msz5FxpnGkZRdZ7ooPQ5GEiRvfFT2H6gGJ",
         ],
-        "vote_account": "Mvrzoe3cvKFyY8WqVa7Y4ZGnH3KTdEAcez7esRYY67r"
+        "vote_account": "2f9C9AU8nFRKUub8NHToNiZzcwmYiNeipVuP8akKgRVv"
     });
     assert_eq!(stake_proof, expected_stake_proof);
 
@@ -240,7 +241,7 @@ async fn e2e_rejects_replayed_signature_and_incoherent_stake_root() -> anyhow::R
     let snapshot_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
-        .join("tests/src/fixtures/meta_merkle_340850340.zip");
+        .join("tests/src/fixtures/meta_merkle-477641713.zip");
     let honest_bytes = tokio::fs::read(&snapshot_path).await?;
     let (honest_snapshot, honest_snapshot_hash) =
         cli::MetaMerkleSnapshot::read_from_bytes_with_hash(honest_bytes.clone(), true)?;
@@ -373,7 +374,7 @@ async fn e2e_same_slot_reupload_fully_replaces_rows() -> anyhow::Result<()> {
     let snapshot_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
-        .join("tests/src/fixtures/meta_merkle_340850340.zip");
+        .join("tests/src/fixtures/meta_merkle-477641713.zip");
     let full_bytes = tokio::fs::read(&snapshot_path).await?;
     let (full_snapshot, full_hash) =
         cli::MetaMerkleSnapshot::read_from_bytes_with_hash(full_bytes.clone(), true)?;
@@ -417,6 +418,23 @@ async fn e2e_same_slot_reupload_fully_replaces_rows() -> anyhow::Result<()> {
         .meta_merkle_leaf
         .active_stake
         .saturating_add(1);
+    modified_bundle.stake_merkle_leaves[0].active_stake = modified_bundle
+        .stake_merkle_leaves[0]
+        .active_stake
+        .saturating_add(1);
+
+    // Recompute the stake merkle root over the modified stake leaves so the
+    // bundle stays internally coherent, mirroring how the CLI builds it.
+    let stake_hashed_nodes: Vec<[u8; 32]> = modified_bundle
+        .stake_merkle_leaves
+        .iter()
+        .map(|n| n.hash().to_bytes())
+        .collect();
+    let stake_merkle = MerkleTree::new(&stake_hashed_nodes[..], true);
+    modified_bundle.meta_merkle_leaf.stake_merkle_root = stake_merkle
+        .get_root()
+        .expect("stake merkle root")
+        .to_bytes();
 
     // Re-derive the meta-merkle root and proof over the replacement leaf set
     // (a single bundle here), mirroring how the CLI builds a snapshot. A real
@@ -590,7 +608,7 @@ async fn e2e_serves_derived_proof_when_upload_proof_bytes_are_poisoned() -> anyh
     let snapshot_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
-        .join("tests/src/fixtures/meta_merkle_340850340.zip");
+        .join("tests/src/fixtures/meta_merkle-477641713.zip");
     let honest_bytes = tokio::fs::read(&snapshot_path).await?;
     let (mut snapshot, _) =
         cli::MetaMerkleSnapshot::read_from_bytes_with_hash(honest_bytes.clone(), true)?;
@@ -695,7 +713,7 @@ async fn e2e_rejects_leaves_that_do_not_reproduce_signed_root() -> anyhow::Resul
     let snapshot_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
-        .join("tests/src/fixtures/meta_merkle_340850340.zip");
+        .join("tests/src/fixtures/meta_merkle-477641713.zip");
     let honest_bytes = tokio::fs::read(&snapshot_path).await?;
     let (mut snapshot, _) =
         cli::MetaMerkleSnapshot::read_from_bytes_with_hash(honest_bytes.clone(), true)?;

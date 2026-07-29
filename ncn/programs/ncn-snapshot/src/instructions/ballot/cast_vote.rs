@@ -29,6 +29,7 @@ pub fn handler(ctx: Context<CastVote>, ballot: Ballot) -> Result<()> {
         ErrorCode::VotingExpired
     );
     require!(ballot.meta_merkle_root != [0; 32], ErrorCode::InvalidBallot);
+    require!(clock.slot > ballot_box.snapshot_slot, ErrorCode::SnapshotSlotNotReached);
 
     let operator_vote = ballot_box
         .operator_votes

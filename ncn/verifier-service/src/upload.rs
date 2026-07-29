@@ -1,7 +1,8 @@
 //! Upload handling for snapshot files
 
-use std::str::FromStr;
+use std::{collections::HashSet, str::FromStr};
 
+use anchor_lang::prelude::Pubkey as AnchorPubkey;
 use anyhow::Result;
 use axum::{
     extract::{Multipart, State},
@@ -92,7 +93,14 @@ pub async fn handle_upload(
         StatusCode::BAD_REQUEST
     })?;
 
-    // 7. Reconstruct the meta merkle tree from the uploaded leaves and confirm it
+    // 7. Validate the snapshot contents to ensure no duplicate account entries
+    validate_snapshot(&snapshot).map_err(|e| {
+        info!("Invalid snapshot: {}", e);
+        metrics::record_upload_outcome(metrics::UploadOutcome::BadRequest);
+        StatusCode::BAD_REQUEST
+    })?;
+
+    // 8. Reconstruct the meta merkle tree from the uploaded leaves and confirm it
     // reproduces the signed root. Every proof we later serve is derived from this
     // tree, so the uploaded `bundle.proof` bytes are never trusted or persisted.
     let meta_merkle_tree = reconstruct_meta_merkle_tree(&snapshot).map_err(|e| {
@@ -101,7 +109,7 @@ pub async fn handle_upload(
         StatusCode::BAD_REQUEST
     })?;
 
-    // 8. Index data in database
+    // 9. Index data in database
     index_snapshot_data(
         &pool,
         &snapshot,
@@ -140,6 +148,46 @@ fn validate_stake_merkle_roots(snapshot: &MetaMerkleSnapshot) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn validate_snapshot(snapshot: &MetaMerkleSnapshot) -> Result<()> {
+    let mut vote_accs: HashSet<AnchorPubkey> = HashSet::new();
+    let mut stake_accs: HashSet<AnchorPubkey> = HashSet::new();
+    for bundle in snapshot.leaf_bundles.iter() {
+        if vote_accs.contains(&bundle.meta_merkle_leaf.vote_account) {
+            return Err(anyhow::anyhow!(
+                "duplicated vote account {}",
+                bundle.meta_merkle_leaf.vote_account
+            ));
+        }
+        vote_accs.insert(bundle.meta_merkle_leaf.vote_account);
+
+        let mut sum_stake: u64 = 0;
+        for leaf in &bundle.stake_merkle_leaves {
+            if stake_accs.contains(&leaf.stake_account) {
+                return Err(anyhow::anyhow!(
+                    "duplicated stake account {}",
+                    leaf.stake_account
+                ));
+            }
+            stake_accs.insert(leaf.stake_account);
+            sum_stake = sum_stake
+                .checked_add(leaf.active_stake)
+                .ok_or(anyhow::anyhow!(
+                    "overflow of stake sum in leaves for bundle {}",
+                    bundle.meta_merkle_leaf.vote_account
+                ))?;
+        }
+
+        if sum_stake != bundle.meta_merkle_leaf.active_stake {
+            return Err(anyhow::anyhow!(
+                "bundle active stake {} does not match leaves sum {}",
+                bundle.meta_merkle_leaf.active_stake,
+                sum_stake
+            ));
+        }
+    }
     Ok(())
 }
 
