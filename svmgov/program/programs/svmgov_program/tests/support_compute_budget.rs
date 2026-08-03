@@ -19,9 +19,11 @@ const SUPPORT_COMPUTE_UNIT_LIMIT: u32 = 600_000;
 const REQUIRED_HEADROOM_FACTOR: u64 = 2;
 const DEFAULT_COMPUTE_UNITS_PER_IX: u32 = 200_000;
 
-/// Threshold lands at 100%, so the list can be filled without activating voting
-/// until the very last support.
-const VALIDATOR_COUNT: usize = 2_000;
+/// Tracks the supporter cap, so raising `MAX_SUPPORTERS_LIMIT` re-measures the
+/// new worst case instead of silently testing the old one. Equal to the
+/// supporter count, so the threshold lands at 100% and the list can be filled
+/// without activating voting until the very last support.
+const VALIDATOR_COUNT: usize = MAX_SUPPORTERS as usize;
 
 fn support_ix_for(h: &Harness, proposal: Address, idx: usize, ballot_box: Address) -> Instruction {
     let vote = h.validators[idx].vote.pubkey();
@@ -85,7 +87,9 @@ fn support_without_compute_budget_request_exhausts_default_limit() {
 
     let failed_at = first_failing_count
         .expect("default budget never ran out — the raised client limit may be unnecessary");
-    println!("default {DEFAULT_COMPUTE_UNITS_PER_IX} CU budget exhausted at {failed_at} supporters");
+    println!(
+        "default {DEFAULT_COMPUTE_UNITS_PER_IX} CU budget exhausted at {failed_at} supporters"
+    );
 
     // Same call, same state, with the limit clients request.
     let signer = h.validators[failed_at].identity.insecure_clone();
@@ -115,11 +119,16 @@ fn support_at_max_supporters_fits_within_requested_limit() {
 
     let mut peak_cu = 0u64;
     for i in 0..VALIDATOR_COUNT {
-        let meta = try_support_one(&mut h, proposal, i, ballot_box)
-            .unwrap_or_else(|e| panic!("support #{i} failed: {:?}\nlogs: {:#?}", e.err, e.meta.logs));
+        let meta = try_support_one(&mut h, proposal, i, ballot_box).unwrap_or_else(|e| {
+            panic!("support #{i} failed: {:?}\nlogs: {:#?}", e.err, e.meta.logs)
+        });
         peak_cu = peak_cu.max(meta.compute_units_consumed);
         if (i + 1) % 500 == 0 {
-            println!("supported {}/{VALIDATOR_COUNT} — {} CU", i + 1, meta.compute_units_consumed);
+            println!(
+                "supported {}/{VALIDATOR_COUNT} — {} CU",
+                i + 1,
+                meta.compute_units_consumed
+            );
         }
     }
 
