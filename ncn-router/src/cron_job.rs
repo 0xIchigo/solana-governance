@@ -349,10 +349,8 @@ fn compare_with_chain(
             .unwrap_or_default()
     };
 
-    // Drop verifiers that verify cleanly against their own stale slot but have
-    // fallen behind the fleet — they would otherwise stay in rotation and 404
-    // every proof request for a current snapshot. Runs before de-duplication so
-    // an origin that is stale on one row cannot be preferred as `ok` on another.
+    // Before de-duplication, so an origin that is stale on one row cannot be
+    // preferred as `ok` on another.
     let mut whitelist_verifiers = whitelist_verifiers;
     demote_stale_verifiers(
         &mut whitelist_verifiers,
@@ -397,30 +395,38 @@ fn compare_with_chain(
 }
 
 fn max_verifier_slot_lag() -> u64 {
-    env::var("NCN_MAX_VERIFIER_SLOT_LAG")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_MAX_VERIFIER_SLOT_LAG)
+    parse_max_verifier_slot_lag(env::var("NCN_MAX_VERIFIER_SLOT_LAG").ok().as_deref())
 }
 
-/// Demote `ok` verifiers whose latest snapshot trails `freshest_slot` by more
-/// than `max_lag`, so the router stops sampling them.
+/// A malformed override falls back to the default but says so: silently widening
+/// the budget would keep verifiers in rotation that the configured policy meant
+/// to drop, which is the failure this whole check exists to prevent.
+fn parse_max_verifier_slot_lag(raw: Option<&str>) -> u64 {
+    let Some(value) = raw else {
+        return DEFAULT_MAX_VERIFIER_SLOT_LAG;
+    };
+    value.trim().parse().unwrap_or_else(|_| {
+        eprintln!(
+            "[ncn-meta-cron] ignoring NCN_MAX_VERIFIER_SLOT_LAG={value:?}: not a slot count; \
+             using {DEFAULT_MAX_VERIFIER_SLOT_LAG}. Verifiers the configured value would have \
+             dropped stay in rotation until this is corrected."
+        );
+        DEFAULT_MAX_VERIFIER_SLOT_LAG
+    })
+}
+
+/// Demote `ok` verifiers whose snapshot trails `freshest_slot` by more than
+/// `max_lag`, so the router stops sampling them.
 ///
-/// `status == "ok"` only means a verifier's merkle root and snapshot hash match
-/// the on-chain ballot *at the slot that verifier itself reported*. An operator
-/// that stopped uploading months ago still satisfies that: its stale data is
-/// perfectly self-consistent, so it stays `ok` indefinitely while answering
-/// every proof request for a current snapshot with a 404.
+/// `status == "ok"` only checks a verifier's root against the on-chain ballot at
+/// the slot *it* reported, which an operator that stopped uploading months ago
+/// still satisfies — it stays `ok` while 404ing every current proof request.
 ///
-/// Freshness is measured against the freshest peer rather than the chain tip on
-/// purpose. Snapshots are only produced when a proposal needs one, so between
-/// proposals the whole fleet legitimately sits at the same older slot — against
-/// the tip that would demote everyone, against the fleet it demotes nobody.
-///
-/// `freshest_slot` is the maximum over verifiers that are already `ok`, so the
-/// verifier holding that slot has zero lag and always survives: this can narrow
-/// the routing pool but never empty it. When no verifier is `ok`,
-/// `freshest_slot` is 0 and every lag saturates to 0, so nothing is demoted.
+/// Measured against the freshest peer, not the chain tip: snapshots are only
+/// produced when a proposal needs one, so between proposals the whole fleet
+/// legitimately sits at the same older slot. `freshest_slot` is the max over
+/// already-`ok` verifiers, so its holder has zero lag and always survives —
+/// this narrows the routing pool but never empties it.
 fn demote_stale_verifiers(verifiers: &mut [WhitelistVerifier], freshest_slot: u64, max_lag: u64) {
     for verifier in verifiers.iter_mut() {
         if verifier.status != "ok" {
@@ -864,6 +870,28 @@ mod tests {
         ];
         demote_stale_verifiers(&mut verifiers, 0, DEFAULT_MAX_VERIFIER_SLOT_LAG);
         assert_eq!(statuses(&verifiers), vec!["error", "mismatch"]);
+    }
+
+    #[test]
+    fn lag_override_is_parsed_and_falls_back_loudly() {
+        assert_eq!(parse_max_verifier_slot_lag(Some("1000")), 1_000);
+        assert_eq!(parse_max_verifier_slot_lag(Some("  1000  ")), 1_000);
+        // 0 is a legitimate "any lag is stale" policy, not a parse failure.
+        assert_eq!(parse_max_verifier_slot_lag(Some("0")), 0);
+        assert_eq!(
+            parse_max_verifier_slot_lag(None),
+            DEFAULT_MAX_VERIFIER_SLOT_LAG
+        );
+        // Malformed values fall back rather than taking the cron down, but the
+        // fallback is announced — silently widening the budget would keep stale
+        // verifiers routable against the operator's intent.
+        for bad in ["", "abc", "-1", "1.5", "1_000"] {
+            assert_eq!(
+                parse_max_verifier_slot_lag(Some(bad)),
+                DEFAULT_MAX_VERIFIER_SLOT_LAG,
+                "unexpected parse of {bad:?}"
+            );
+        }
     }
 
     #[test]
