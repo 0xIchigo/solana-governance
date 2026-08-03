@@ -13,21 +13,13 @@ import { useGovernanceConfigContext } from "@/contexts/GovernanceConfigContext";
 import {
   epochConstantsFromGovernanceConfig,
   getProposalPhaseEpochs,
+  supportThresholdPercentFromConfig,
 } from "@/lib/proposals";
 import { NotificationButton } from "./NotificationButton";
 import { PhaseStatusBadge } from "./PhaseStatusBadge";
 import { SupportDonut } from "./SupportDonut";
 import { StatBadge, StatCard } from "./StatCard";
 import { TimeRemainingCarousel } from "./TimeRemainingCarousel";
-
-// ============================================================================
-// Configuration - These will be replaced with real data later
-// ============================================================================
-
-/** Support threshold as percentage of total staked SOL (e.g., 15 = 15%) */
-
-// TODO: testnet is 10%, mainnet is 15% - create a getter depending on the endpoint type
-export const SUPPORT_THRESHOLD_PERCENT = 10;
 
 /** Mock total active staked SOL across the network (in lamports) */
 // const MOCK_TOTAL_STAKED_LAMPORTS = 316_010_000 * LAMPORTS_PER_SOL; // 316.01M SOL
@@ -85,11 +77,15 @@ export function SupportPhaseProgress({ proposal }: SupportPhaseProgressProps) {
     governanceConfigQuery.isLoading ||
     governanceConfigQuery.isPending;
 
+  const configData = governanceConfigQuery.data;
+
   const stats = useMemo(() => {
     // Use proposal's clusterSupportLamports as current support
     const currentSupportLamports = proposal.clusterSupportLamports;
     const totalStakedLamports = validatorsStake;
-    const thresholdPercent = SUPPORT_THRESHOLD_PERCENT;
+    // Support threshold comes from the on-chain GlobalConfig; falls back to
+    // the current mainnet default until the config loads.
+    const thresholdPercent = supportThresholdPercentFromConfig(configData);
 
     // Calculate required threshold in lamports
     const requiredThresholdLamports =
@@ -104,7 +100,7 @@ export function SupportPhaseProgress({ proposal }: SupportPhaseProgressProps) {
     // Support as percent of total staked
     const supportPercentOfTotal =
       totalStakedLamports > 0
-        ? (currentSupportLamports / totalStakedLamports) * 1000
+        ? (currentSupportLamports / totalStakedLamports) * 100
         : 0;
 
     // Remaining SOL needed (0 if threshold met)
@@ -135,6 +131,7 @@ export function SupportPhaseProgress({ proposal }: SupportPhaseProgressProps) {
       avgStakePerValidator,
     };
   }, [
+    configData,
     numOfValidators,
     proposal.clusterSupportLamports,
     supportAccounts.length,

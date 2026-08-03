@@ -51,6 +51,7 @@ export const getProposals = async (
       currentEpoch,
       totalStakedLamports,
       epochConstants,
+      governanceConfig.clusterSupportPctMinBps,
     ),
   );
 
@@ -76,6 +77,7 @@ export function mapProposalDto(
   currentEpoch: number,
   totalStakedLamports: number,
   epochConstants: EpochConstants,
+  clusterSupportPctMinBps: number,
 ): ProposalRecord {
   const raw = rawAccount.account;
   const creationEpoch = raw.creationEpoch.toNumber();
@@ -92,6 +94,7 @@ export function mapProposalDto(
     currentEpoch,
     clusterSupportLamports,
     totalStakedLamports,
+    clusterSupportPctMinBps,
     consensusResult,
     finalized,
     voting: raw.voting,

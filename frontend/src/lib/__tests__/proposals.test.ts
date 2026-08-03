@@ -2,14 +2,11 @@ import { PublicKey } from "@solana/web3.js";
 import { getProposalStatus } from "../proposals";
 import type { EpochConstants, GetProposalStatusParams } from "../proposals";
 
-// Mock the SUPPORT_THRESHOLD_PERCENT constant
-jest.mock("@/components/proposals/detail/support-phase-progress", () => ({
-  SUPPORT_THRESHOLD_PERCENT: 10,
-}));
-
 describe("getProposalStatus", () => {
   const creationEpoch = 800;
   const totalStakedLamports = 100_000_000_000; // 100M SOL in lamports
+  // 10% threshold (1000 bps), passed through params like the on-chain config
+  const clusterSupportPctMinBps = 1000;
   const requiredThresholdLamports = totalStakedLamports * 0.1; // 10% = 10M SOL
   const mockConsensusResult = new PublicKey("11111111111111111111111111111111");
 
@@ -42,6 +39,7 @@ describe("getProposalStatus", () => {
     startEpoch: defaultStartEpoch,
     endEpoch: defaultEndEpoch,
     totalStakedLamports,
+    clusterSupportPctMinBps,
     consensusResult: undefined,
     finalized: false,
     voting: false,
