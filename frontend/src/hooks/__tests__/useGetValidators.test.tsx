@@ -23,6 +23,7 @@ jest.mock("@solana/web3.js", () => ({
 }));
 
 import { useGetValidators } from "../useGetValidators";
+import { useValidatorsTotalStakedLamports } from "../useValidatorsTotalStakedLamports";
 
 const VOTE_ACCOUNT = "Vote111111111111111111111111111111111111111";
 const IDENTITY = "Node1111111111111111111111111111111111111111";
@@ -130,5 +131,35 @@ describe("useGetValidators", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(result.current.data?.[0].identity).toBe(IDENTITY);
+  });
+});
+
+describe("useValidatorsTotalStakedLamports", () => {
+  it("reports an unknown denominator rather than zero when the RPC fails", async () => {
+    // Regression (PR #121 review): throwing surfaced the query error, but the
+    // derived hook still collapsed the undefined data into 0, so consumers
+    // divided by zero and rendered "0.00%" — indistinguishable from a real
+    // tally. Unknown must stay unknown all the way to the consumer.
+    mockGetStakeWizValidators.mockResolvedValue(stakeWiz());
+    mockGetVoteAccounts.mockRejectedValue(new Error("rpc down"));
+
+    const { result } = renderHook(() => useValidatorsTotalStakedLamports(), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    expect(result.current.totalStakedLamports).toBeUndefined();
+  });
+
+  it("sums activated stake once the query resolves", async () => {
+    mockGetStakeWizValidators.mockResolvedValue(stakeWiz());
+    mockGetVoteAccounts.mockResolvedValue(voteAccounts());
+
+    const { result } = renderHook(() => useValidatorsTotalStakedLamports(), {
+      wrapper,
+    });
+    await waitFor(() =>
+      expect(result.current.totalStakedLamports).toBe(RPC_STAKE_LAMPORTS),
+    );
   });
 });
