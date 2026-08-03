@@ -1,11 +1,15 @@
 use std::str::FromStr;
 
-use anchor_client::solana_sdk::{pubkey::Pubkey, signer::Signer, transaction::Transaction};
+use anchor_client::solana_sdk::{
+    compute_budget::ComputeBudgetInstruction, pubkey::Pubkey, signer::Signer,
+    transaction::Transaction,
+};
 use anchor_lang::system_program;
 use anyhow::{Result, anyhow};
 use ncn_snapshot::ID as SNAPSHOT_PROGRAM_ID;
 
 use crate::{
+    constants::SUPPORT_COMPUTE_UNIT_LIMIT,
     svmgov_program::client::{accounts, args},
     utils::utils::{
         create_spinner, derive_global_config_pda, derive_program_config_pda, derive_support_pda,
@@ -46,8 +50,13 @@ pub async fn support_proposal(
     let program_config_pda = derive_program_config_pda(&SNAPSHOT_PROGRAM_ID);
     let global_config_pda = derive_global_config_pda(&program.id());
 
+    // Covers the supporter re-tally past the 200k default; see
+    // SUPPORT_COMPUTE_UNIT_LIMIT.
     let support_proposal_ixs = program
         .request()
+        .instruction(ComputeBudgetInstruction::set_compute_unit_limit(
+            SUPPORT_COMPUTE_UNIT_LIMIT,
+        ))
         .args(args::SupportProposal {})
         .accounts(accounts::SupportProposal {
             signer: payer.pubkey(),

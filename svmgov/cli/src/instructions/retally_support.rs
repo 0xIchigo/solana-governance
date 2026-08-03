@@ -1,11 +1,15 @@
 use std::str::FromStr;
 
-use anchor_client::solana_sdk::{pubkey::Pubkey, signer::Signer, transaction::Transaction};
+use anchor_client::solana_sdk::{
+    compute_budget::ComputeBudgetInstruction, pubkey::Pubkey, signer::Signer,
+    transaction::Transaction,
+};
 use anchor_lang::system_program;
 use anyhow::{Result, anyhow};
 use ncn_snapshot::ID as SNAPSHOT_PROGRAM_ID;
 
 use crate::{
+    constants::SUPPORT_COMPUTE_UNIT_LIMIT,
     svmgov_program::client::{accounts, args},
     utils::utils::{
         create_spinner, derive_global_config_pda, derive_program_config_pda, fetch_global_config,
@@ -47,8 +51,13 @@ pub async fn retally_support(
     let program_config_pda = derive_program_config_pda(&SNAPSHOT_PROGRAM_ID);
     let global_config_pda = derive_global_config_pda(&program.id());
 
+    // Same full-supporter re-tally as support_proposal; see
+    // SUPPORT_COMPUTE_UNIT_LIMIT.
     let retally_support_ixs = program
         .request()
+        .instruction(ComputeBudgetInstruction::set_compute_unit_limit(
+            SUPPORT_COMPUTE_UNIT_LIMIT,
+        ))
         .args(args::RetallySupport {})
         .accounts(accounts::RetallySupport {
             signer: payer.pubkey(),

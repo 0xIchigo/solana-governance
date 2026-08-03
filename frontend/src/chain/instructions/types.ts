@@ -164,3 +164,18 @@ export interface NetworkMetaResponse {
 export const BASIS_POINTS_TOTAL = 10000;
 export const SVMGOV_PROGRAM_ID = new PublicKey(svmgovProgramIdl.address);
 export const SNAPSHOT_PROGRAM_ID = new PublicKey(govV1idl.address);
+
+/**
+ * Compute-unit limit requested for `support_proposal`, which re-tallies the
+ * whole supporter list on every call (~20k CU + ~132 per supporter, so ~285k at
+ * the 2000 cap) and outgrows the 200k default at 1347 supporters. Headroom
+ * only: mainnet's ~800 validators cannot reach that.
+ *
+ * 600k is >2x the worst case at the cap and well under the 1.4M ceiling.
+ * Priority fees price the requested limit rather than the amount consumed, so
+ * right-size this off simulation if a compute-unit price is ever added.
+ *
+ * Measured by the program's `tests/support_compute_budget.rs`; keep in sync
+ * with the copy in `svmgov/cli/src/constants.rs`.
+ */
+export const SUPPORT_COMPUTE_UNIT_LIMIT = 600_000;

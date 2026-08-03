@@ -1,4 +1,9 @@
-import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+import {
+  ComputeBudgetProgram,
+  PublicKey,
+  SystemProgram,
+  Transaction,
+} from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
 import {
   BlockchainParams,
@@ -6,6 +11,7 @@ import {
   SupportProposalParams,
   TransactionResult,
   SNAPSHOT_PROGRAM_ID,
+  SUPPORT_COMPUTE_UNIT_LIMIT,
   ChainVoteAccountData,
 } from "./types";
 import {
@@ -92,6 +98,13 @@ export async function supportProposal(
     .instruction();
 
   const transaction = new Transaction();
+  // Covers the supporter re-tally past the 200k default; see
+  // SUPPORT_COMPUTE_UNIT_LIMIT.
+  transaction.add(
+    ComputeBudgetProgram.setComputeUnitLimit({
+      units: SUPPORT_COMPUTE_UNIT_LIMIT,
+    }),
+  );
   transaction.add(supportProposalInstruction);
   transaction.feePayer = wallet.publicKey;
   transaction.recentBlockhash = (
