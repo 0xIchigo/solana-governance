@@ -24,8 +24,10 @@ export interface TopSupporterRecord {
   validatorName: string;
   validatorIdentity: string;
   validatorImage?: string | null;
-  stakedLamports: number;
-  stakePercentage: number;
+  /** `undefined` when validator metadata could not be loaded. */
+  stakedLamports: number | undefined;
+  /** `undefined` when total network stake is unknown, so it can render "—". */
+  stakePercentage: number | undefined;
   accentColor: string;
 }
 
