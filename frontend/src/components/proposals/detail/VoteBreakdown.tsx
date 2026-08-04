@@ -76,7 +76,7 @@ const VoteBreakdown = ({
               forLamports={proposal.forVotesLamports}
               againstLamports={proposal.againstVotesLamports}
               abstainLamports={proposal.abstainVotesLamports}
-              totalLamports={totalStakedLamports ?? 0}
+              totalLamports={totalStakedLamports}
               quorumPercentage={proposal.quorumPercent / 100}
             />
           )}
