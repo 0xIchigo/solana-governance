@@ -66,9 +66,22 @@ export interface ProposalPhaseEpochs {
   snapshotEpoch: number;
 }
 
+/**
+ * On-chain phase anchors from the proposal account. Once support succeeds
+ * (`voting === true`) the program records the definitive voting start/end
+ * epochs, which supersede any creation-based projection: a proposal that
+ * reaches the threshold before its full support window enters discussion
+ * (and voting) earlier than the worst-case estimate.
+ */
+export interface ProposalPhaseAnchors {
+  voting: boolean;
+  startEpoch: number;
+}
+
 export function getProposalPhaseEpochs(
   creationEpoch: number,
   epochs: EpochConstants,
+  onChain?: ProposalPhaseAnchors,
 ): ProposalPhaseEpochs {
   // Support phase always uses creationEpoch
   const supportStartEpoch = creationEpoch;
@@ -78,9 +91,17 @@ export function getProposalPhaseEpochs(
   // When voting === false, calculate phases based on creationEpoch
   const phaseBaseEpoch = supportEndEpoch;
   const discussionStartEpoch = phaseBaseEpoch;
-  const discussionEndEpoch = phaseBaseEpoch + epochs.DISCUSSION_EPOCHS;
-  const snapshotEpoch =
+  let discussionEndEpoch = phaseBaseEpoch + epochs.DISCUSSION_EPOCHS;
+  let snapshotEpoch =
     phaseBaseEpoch + epochs.DISCUSSION_EPOCHS + epochs.SNAPSHOT_EPOCHS;
+
+  // Support already succeeded: the program has set the real voting start
+  // (discussion + snapshot extension counted from when the threshold was
+  // met, not from the end of the full support window). Use it.
+  if (onChain?.voting && onChain.startEpoch > 0) {
+    discussionEndEpoch = onChain.startEpoch;
+    snapshotEpoch = onChain.startEpoch;
+  }
 
   return {
     supportStartEpoch,
