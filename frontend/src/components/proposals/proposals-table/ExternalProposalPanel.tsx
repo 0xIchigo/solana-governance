@@ -218,25 +218,25 @@ function VotingPanel({ proposal }: { proposal: ProposalRecord }) {
         </div>
       </header>
 
-      {connected ? (
-        <>
-          {isDiscussion && (
-            <DiscussionMessage proposalId={proposal.publicKey.toBase58()} />
-          )}
-          {(isSupporting || isVoting) && (
-            <VoteActions
-              state={proposal.status}
-              proposalId={proposal.publicKey.toBase58()}
-              consensusResult={proposal.consensusResult}
-            />
-          )}
-        </>
+      {/* Discussion is read-only (View Details navigation) — always shown,
+          wallet or not. Only transaction actions are wallet-gated. */}
+      {isDiscussion ? (
+        <DiscussionMessage proposalId={proposal.publicKey.toBase58()} />
+      ) : connected ? (
+        (isSupporting || isVoting) && (
+          <VoteActions
+            state={proposal.status}
+            proposalId={proposal.publicKey.toBase58()}
+            consensusResult={proposal.consensusResult}
+          />
+        )
       ) : (
         <Tooltip>
           <TooltipTrigger asChild>
             <span>
-              {isSupporting ||
-                (isVoting && <VoteActions state={proposal.status} disabled />)}
+              {(isSupporting || isVoting) && (
+                <VoteActions state={proposal.status} disabled />
+              )}
             </span>
           </TooltipTrigger>
           <TooltipContent side="bottom">
