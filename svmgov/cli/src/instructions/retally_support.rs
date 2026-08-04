@@ -9,7 +9,8 @@ use anyhow::{Result, anyhow};
 use ncn_snapshot::ID as SNAPSHOT_PROGRAM_ID;
 
 use crate::{
-    constants::SUPPORT_COMPUTE_UNIT_LIMIT,
+    constants::support_compute_unit_limit,
+    svmgov_program::accounts::Proposal,
     svmgov_program::client::{accounts, args},
     utils::utils::{
         create_spinner, derive_global_config_pda, derive_program_config_pda, fetch_global_config,
@@ -31,6 +32,14 @@ pub async fn retally_support(
 
     let global_config = fetch_global_config(&program).await?;
 
+    // Same full-supporter re-tally as support_proposal, so the budget is sized
+    // from the current list length.
+    let proposal = program
+        .account::<Proposal>(proposal_pubkey)
+        .await
+        .map_err(|e| anyhow!("Failed to fetch proposal: {}", e))?;
+    let compute_unit_limit = support_compute_unit_limit(proposal.num_supporters);
+
     let spinner = create_spinner("Re-tallying proposal support...");
 
     // Same prospective snapshot slot as support_proposal: if this retally
@@ -51,12 +60,10 @@ pub async fn retally_support(
     let program_config_pda = derive_program_config_pda(&SNAPSHOT_PROGRAM_ID);
     let global_config_pda = derive_global_config_pda(&program.id());
 
-    // Same full-supporter re-tally as support_proposal; see
-    // SUPPORT_COMPUTE_UNIT_LIMIT.
     let retally_support_ixs = program
         .request()
         .instruction(ComputeBudgetInstruction::set_compute_unit_limit(
-            SUPPORT_COMPUTE_UNIT_LIMIT,
+            compute_unit_limit,
         ))
         .args(args::RetallySupport {})
         .accounts(accounts::RetallySupport {

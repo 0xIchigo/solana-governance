@@ -9,7 +9,8 @@ use anyhow::{Result, anyhow};
 use ncn_snapshot::ID as SNAPSHOT_PROGRAM_ID;
 
 use crate::{
-    constants::SUPPORT_COMPUTE_UNIT_LIMIT,
+    constants::support_compute_unit_limit,
+    svmgov_program::accounts::Proposal,
     svmgov_program::client::{accounts, args},
     utils::utils::{
         create_spinner, derive_global_config_pda, derive_program_config_pda, derive_support_pda,
@@ -33,6 +34,14 @@ pub async fn support_proposal(
 
     let global_config = fetch_global_config(&program).await?;
 
+    // The handler re-tallies every existing supporter, so the compute budget is
+    // sized from the current list length rather than a flat worst case.
+    let proposal = program
+        .account::<Proposal>(proposal_pubkey)
+        .await
+        .map_err(|e| anyhow!("Failed to fetch proposal: {}", e))?;
+    let compute_unit_limit = support_compute_unit_limit(proposal.num_supporters);
+
     let spinner = create_spinner("Supporting proposal...");
 
     let clock = program.rpc().get_epoch_info().await?;
@@ -50,12 +59,10 @@ pub async fn support_proposal(
     let program_config_pda = derive_program_config_pda(&SNAPSHOT_PROGRAM_ID);
     let global_config_pda = derive_global_config_pda(&program.id());
 
-    // Covers the supporter re-tally past the 200k default; see
-    // SUPPORT_COMPUTE_UNIT_LIMIT.
     let support_proposal_ixs = program
         .request()
         .instruction(ComputeBudgetInstruction::set_compute_unit_limit(
-            SUPPORT_COMPUTE_UNIT_LIMIT,
+            compute_unit_limit,
         ))
         .args(args::SupportProposal {})
         .accounts(accounts::SupportProposal {

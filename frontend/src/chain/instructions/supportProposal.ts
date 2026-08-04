@@ -11,7 +11,7 @@ import {
   SupportProposalParams,
   TransactionResult,
   SNAPSHOT_PROGRAM_ID,
-  SUPPORT_COMPUTE_UNIT_LIMIT,
+  supportComputeUnitLimit,
   ChainVoteAccountData,
 } from "./types";
 import {
@@ -50,6 +50,11 @@ export async function supportProposal(
 
   const proposalPubkey = new PublicKey(proposalId);
   const splVoteAccount = new PublicKey(validatorVoteAccount.voteAccount);
+
+  // The handler re-tallies every existing supporter, so the compute budget is
+  // sized from the current list length rather than a flat worst case.
+  const proposalAccount = await program.account.proposal.fetch(proposalPubkey);
+  const numSupporters = Number(proposalAccount.numSupporters ?? 0);
 
   // Derive support PDA - based on IDL, it uses proposal and signer
   const supportPda = deriveSupportPda(
@@ -98,11 +103,11 @@ export async function supportProposal(
     .instruction();
 
   const transaction = new Transaction();
-  // Covers the supporter re-tally past the 200k default; see
-  // SUPPORT_COMPUTE_UNIT_LIMIT.
+  // Sized from the current supporter count — the handler re-tallies the whole
+  // list. See supportComputeUnitLimit.
   transaction.add(
     ComputeBudgetProgram.setComputeUnitLimit({
-      units: SUPPORT_COMPUTE_UNIT_LIMIT,
+      units: supportComputeUnitLimit(numSupporters),
     }),
   );
   transaction.add(supportProposalInstruction);

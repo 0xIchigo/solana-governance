@@ -11,12 +11,21 @@ use {
     solana_signer::Signer, solana_transaction_error::TransactionError,
 };
 
-/// Keep in sync with `SUPPORT_COMPUTE_UNIT_LIMIT` in svmgov/cli/src/constants.rs
-/// and frontend/src/chain/instructions/types.ts.
-const SUPPORT_COMPUTE_UNIT_LIMIT: u32 = 600_000;
-/// Minimum multiple of the measured worst case the request must cover, so cost
-/// drift trips CI well before it trips a caller.
-const REQUIRED_HEADROOM_FACTOR: u64 = 2;
+/// Mirrors `support_compute_unit_limit` in svmgov/cli/src/constants.rs and
+/// `supportComputeUnitLimit` in frontend/src/chain/instructions/types.ts. The
+/// clients scale their request with the supporter count; this suite is what
+/// justifies the model, so keep the constants in step.
+const SUPPORT_CU_BASE: u32 = 22_500;
+const SUPPORT_CU_PER_SUPPORTER: u32 = 132;
+const SUPPORT_CU_ACTIVATION: u32 = 25_000;
+const SUPPORT_CU_HEADROOM_PERCENT: u32 = 15;
+
+fn modelled_limit(num_supporters: u32) -> u64 {
+    let modelled =
+        SUPPORT_CU_BASE + SUPPORT_CU_PER_SUPPORTER * num_supporters + SUPPORT_CU_ACTIVATION;
+    (u64::from(modelled) * u64::from(100 + SUPPORT_CU_HEADROOM_PERCENT)).div_ceil(100)
+}
+
 const DEFAULT_COMPUTE_UNITS_PER_IX: u32 = 200_000;
 
 /// Tracks the supporter cap, so raising `MAX_SUPPORTERS_LIMIT` re-measures the
@@ -98,7 +107,9 @@ fn support_without_compute_budget_request_exhausts_default_limit() {
         &mut h.svm,
         &signer,
         &[
-            ComputeBudgetInstruction::set_compute_unit_limit(SUPPORT_COMPUTE_UNIT_LIMIT),
+            ComputeBudgetInstruction::set_compute_unit_limit(
+                modelled_limit(failed_at as u32) as u32
+            ),
             ix,
         ],
     );
@@ -136,13 +147,13 @@ fn support_at_max_supporters_fits_within_requested_limit() {
     assert_eq!(state.num_supporters as usize, VALIDATOR_COUNT);
     assert!(state.voting, "threshold should have activated voting");
 
-    println!("peak at {VALIDATOR_COUNT} supporters: {peak_cu} CU of {SUPPORT_COMPUTE_UNIT_LIMIT}");
+    let requested = modelled_limit(VALIDATOR_COUNT as u32);
+    println!("peak at {VALIDATOR_COUNT} supporters: {peak_cu} CU; clients request {requested}");
     assert!(
-        peak_cu * REQUIRED_HEADROOM_FACTOR < SUPPORT_COMPUTE_UNIT_LIMIT as u64,
-        "support at the cap consumed {peak_cu} CU, under {REQUIRED_HEADROOM_FACTOR}x headroom of \
-         the {SUPPORT_COMPUTE_UNIT_LIMIT} clients request. Raise SUPPORT_COMPUTE_UNIT_LIMIT in \
-         svmgov/cli/src/constants.rs AND frontend/src/chain/instructions/types.ts (ceiling is \
-         1_400_000), or make the re-tally cheaper."
+        peak_cu < requested,
+        "support at the cap consumed {peak_cu} CU but the clients' model requests only \
+         {requested}. Adjust the constants in svmgov/cli/src/constants.rs AND \
+         frontend/src/chain/instructions/types.ts (and the mirrors above)."
     );
 }
 
@@ -167,10 +178,10 @@ fn retally_at_max_supporters_fits_within_requested_limit() {
         VALIDATOR_COUNT - 1,
         meta.compute_units_consumed
     );
+    let requested = modelled_limit((VALIDATOR_COUNT - 1) as u32);
     assert!(
-        meta.compute_units_consumed * REQUIRED_HEADROOM_FACTOR < SUPPORT_COMPUTE_UNIT_LIMIT as u64,
-        "retally consumed {} CU, under {REQUIRED_HEADROOM_FACTOR}x headroom of the \
-         {SUPPORT_COMPUTE_UNIT_LIMIT} clients request",
+        meta.compute_units_consumed < requested,
+        "retally consumed {} CU but the clients' model requests only {requested}",
         meta.compute_units_consumed
     );
 }
