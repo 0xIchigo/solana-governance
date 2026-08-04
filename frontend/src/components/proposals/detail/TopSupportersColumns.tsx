@@ -10,6 +10,10 @@ import {
 import { TopSupporterRecord } from "@/types";
 import { CopyableAddressIcon } from "@/components/governance/shared/CopyableAddressIcon";
 
+/** Shown when validator stake could not be loaded, so an unknown value is not
+ * rendered as a real-looking zero. */
+const UNKNOWN_VALUE = "—";
+
 export const topSupporterColumns: ColumnDef<TopSupporterRecord>[] = [
   {
     accessorKey: "validatorName",
@@ -57,7 +61,9 @@ export const topSupporterColumns: ColumnDef<TopSupporterRecord>[] = [
     ),
     cell: ({ row }) => (
       <div className="text-sm text-white/60">
-        {formatLamportsDisplay(row.original.stakedLamports).value}
+        {row.original.stakedLamports === undefined
+          ? UNKNOWN_VALUE
+          : formatLamportsDisplay(row.original.stakedLamports).value}
       </div>
     ),
     sortingFn: "basic",
@@ -69,7 +75,9 @@ export const topSupporterColumns: ColumnDef<TopSupporterRecord>[] = [
     ),
     cell: ({ row }) => (
       <span className="text-sm text-white/60">
-        {row.original.stakePercentage.toFixed(2)}%
+        {row.original.stakePercentage === undefined
+          ? UNKNOWN_VALUE
+          : `${row.original.stakePercentage.toFixed(2)}%`}
       </span>
     ),
     sortingFn: "basic",

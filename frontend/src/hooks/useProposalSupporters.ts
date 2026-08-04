@@ -4,6 +4,7 @@ import { TopSupporterRecord, Validator } from "@/types";
 import { accentColors } from "@/types/topVoters";
 import { buildSupportFilters, useSupportAccounts } from "./useSupportAccounts";
 import { useGetValidators } from "./useGetValidators";
+import { useValidatorsTotalStakedLamports } from "./useValidatorsTotalStakedLamports";
 
 const getColorFromString = (str: string): string => {
   let hash = 0;
@@ -34,6 +35,10 @@ export const useProposalSupporters = (
   const { data: validators, isLoading: isLoadingValidators } =
     useGetValidators();
 
+  // Same query as above (react-query dedupes), but the denominator lives in one
+  // place so this pane cannot disagree with the rest of the UI about it.
+  const { totalStakedLamports } = useValidatorsTotalStakedLamports();
+
   const supporters = useMemo((): TopSupporterRecord[] => {
     if (!supportAccounts) {
       return [];
@@ -51,19 +56,15 @@ export const useProposalSupporters = (
       }
     }
 
-    const totalStakedLamports = validators
-      ? validators.reduce((sum, v) => sum + (v.activated_stake || 0), 0)
-      : 0;
-
     return supportAccounts.map((support) => {
       const identity = support.validator.toBase58();
       const validator = validatorMap[identity];
       const validatorName = validator?.name || "Unknown Validator";
-      const stakedLamports = validator?.activated_stake || 0;
+      const stakedLamports = validator?.activated_stake;
       const stakePercentage =
-        totalStakedLamports > 0 && stakedLamports > 0
+        totalStakedLamports && stakedLamports !== undefined
           ? (stakedLamports / totalStakedLamports) * 100
-          : 0;
+          : undefined;
 
       return {
         id: support.publicKey.toBase58(),
@@ -75,7 +76,7 @@ export const useProposalSupporters = (
         accentColor: getColorFromString(validatorName),
       };
     });
-  }, [supportAccounts, validators]);
+  }, [supportAccounts, totalStakedLamports, validators]);
 
   return {
     data: supporters,
