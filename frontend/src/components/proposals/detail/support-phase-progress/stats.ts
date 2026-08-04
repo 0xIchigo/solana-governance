@@ -51,11 +51,13 @@ export function computeSupportStats({
     requiredThresholdLamports - currentSupportLamports,
   );
 
-  // A required threshold of 0 means validator stake has not loaded yet, not
-  // that the bar has been cleared. Without the guard any support satisfies
-  // `>= 0`, so the panel claims success on first paint.
+  // Gate on total stake, not on the derived threshold: a zero threshold has two
+  // very different causes. Stake not loaded yet means nothing is known, and
+  // `support >= 0` would claim success on first paint. A configured 0% (the
+  // program permits 0..=10000 bps) genuinely is satisfied by any support, which
+  // is what the on-chain check does, so it must still report met.
   const isThresholdMet =
-    requiredThresholdLamports > 0 &&
+    totalStakedLamports > 0 &&
     currentSupportLamports >= requiredThresholdLamports;
 
   const participationPercent =

@@ -46,6 +46,31 @@ describe("computeSupportStats", () => {
     expect(stats.supportPercentOfTotal).toBe(0);
   });
 
+  it("treats a configured 0% threshold as met, matching the program", () => {
+    // The program permits 0..=10000 bps and its own check is
+    // `support >= cluster_min_stake`, which any support satisfies at 0 bps.
+    // Gating on stake rather than on the derived threshold keeps the two in
+    // agreement instead of reporting unmet for a legitimate config.
+    const stats = computeSupportStats({
+      ...base,
+      thresholdPercent: 0,
+      currentSupportLamports: 1,
+    });
+    expect(stats.requiredThresholdLamports).toBe(0);
+    expect(stats.isThresholdMet).toBe(true);
+  });
+
+  it("still withholds success at 0% while stake is unknown", () => {
+    // The two zero-threshold causes must not collapse into one another.
+    const stats = computeSupportStats({
+      ...base,
+      thresholdPercent: 0,
+      totalStakedLamports: 0,
+      currentSupportLamports: 1,
+    });
+    expect(stats.isThresholdMet).toBe(false);
+  });
+
   it("does not divide by a validator count of zero", () => {
     // Regression: participationPercent was NaN whenever the validator query had
     // not resolved, which rendered as "NaN%".

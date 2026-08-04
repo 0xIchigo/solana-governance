@@ -146,8 +146,9 @@ export function SupportPhaseProgress({ proposal }: SupportPhaseProgressProps) {
         {/* Donut Chart */}
         <div className="flex flex-1 items-center justify-center">
           <SupportDonut
-            currentSupportLamports={stats.currentSupportLamports}
-            requiredThresholdLamports={stats.requiredThresholdLamports}
+            progressPercent={stats.progressPercent}
+            isThresholdMet={stats.isThresholdMet}
+            remainingLamports={stats.remainingLamports}
           />
         </div>
 
