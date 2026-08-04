@@ -35,9 +35,8 @@ export * from "./useHasValidatorVoted";
 export * from "./useStakerVotingPower";
 export * from "./useValidatorVotingPower";
 
-// proposal simd and description hooks
-export * from "./useProposalSimd";
-export * from "./useProposalSimdDescription";
+// proposal document (number + summary) resolution from the on-chain description URL
+export * from "./useProposalDocument";
 
 export * from "./useProposalOverviewStats";
 export * from "./useSummaryStats";

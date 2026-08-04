@@ -1,5 +1,5 @@
 import { createProgramWitDummyWallet } from "@/chain";
-import { getSimd } from "@/hooks";
+import { getProposalRefFromUrl } from "@/lib/github";
 import type { GovernanceConfigDto } from "@/lib/getGovernanceConfig";
 import {
   epochConstantsFromGovernanceConfig,
@@ -101,12 +101,12 @@ export function mapProposalDto(
     epochConstants,
   });
 
-  const simd = getSimd(raw.description);
+  const proposalRef = getProposalRefFromUrl(raw.description);
 
   return {
     publicKey: rawAccount.publicKey,
     id: index.toString(),
-    simd,
+    proposalRef,
     title: raw.title,
     description: raw.description,
     author: raw.author.toBase58(),

@@ -296,7 +296,7 @@ export default function ProposalsTable({ title }: { title: string }) {
                       <TableCell
                         key={cell.id}
                         className={`py-5 px-6 ${
-                          cell.column.id === "simd"
+                          cell.column.id === "proposalRef"
                             ? "text-left"
                             : "text-center"
                         }`}

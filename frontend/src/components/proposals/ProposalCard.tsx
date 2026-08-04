@@ -14,6 +14,7 @@ import { useChainVoteAccount, useWalletRole } from "@/hooks";
 import { toast } from "sonner";
 import { getProposalDetailPagePath } from "@/helpers/proposalPage";
 import { getVoteModalNames } from "@/lib/governance/role-detection";
+import { ProposalRefLabel } from "./ProposalRefLabel";
 
 type ProposalStatus = ProposalRecord["status"];
 interface VotingDetailItem {
@@ -205,7 +206,8 @@ export default function ProposalCard({ proposal }: ProposalCardProps) {
     status,
     quorumPercent,
     title,
-    simd,
+    proposalRef,
+    description,
     publicKey,
     endEpoch,
     consensusResult,
@@ -309,9 +311,11 @@ export default function ProposalCard({ proposal }: ProposalCardProps) {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <span className="text-xs font-plus-jakarta-sans font-semibold text-dao-color-gray">
-                {simd || "-"}
-              </span>
+              <ProposalRefLabel
+                url={description}
+                fallback={proposalRef}
+                className="text-xs font-plus-jakarta-sans font-semibold text-dao-color-gray"
+              />
               <LifecycleIndicator status={status} />
             </div>
             <StatusBadge
@@ -341,9 +345,11 @@ export default function ProposalCard({ proposal }: ProposalCardProps) {
       <div className="hidden md:flex md:gap-4">
         <div className="flex-1 space-y-3">
           <div className="flex items-center gap-3">
-            <span className="text-xs font-plus-jakarta-sans font-semibold text-white/60">
-              {simd || "-"}
-            </span>
+            <ProposalRefLabel
+              url={description}
+              fallback={proposalRef}
+              className="text-xs font-plus-jakarta-sans font-semibold text-white/60"
+            />
             <LifecycleIndicator status={status} />
           </div>
           <h4 className="h4 font-medium text-foreground leading-tight line-clamp-2 text-balance">
