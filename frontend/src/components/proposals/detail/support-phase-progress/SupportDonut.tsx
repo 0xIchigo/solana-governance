@@ -5,32 +5,26 @@ import { useSpring, animated, to } from "@react-spring/web";
 import { formatSOL } from "@/lib/governance/formatters";
 import { DONUT_CONFIG, DonutChartBase } from "../shared/DonutChartBase";
 
+/**
+ * Presentational only. These figures come from `computeSupportStats` so the
+ * donut and its parent cannot disagree — the donut used to recompute
+ * `isThresholdMet` itself and reported success while stake was still loading.
+ */
 interface SupportDonutProps {
-  currentSupportLamports: number;
-  requiredThresholdLamports: number;
+  progressPercent: number;
+  isThresholdMet: boolean;
+  remainingLamports: number;
 }
 
 export function SupportDonut({
-  currentSupportLamports,
-  requiredThresholdLamports,
+  progressPercent,
+  isThresholdMet,
+  remainingLamports,
 }: SupportDonutProps) {
-  const { progressPercent, isThresholdMet, remainingSol } = useMemo(() => {
-    const progress =
-      requiredThresholdLamports > 0
-        ? (currentSupportLamports / requiredThresholdLamports) * 100
-        : 0;
-
-    const remaining = Math.max(
-      0,
-      requiredThresholdLamports - currentSupportLamports
-    );
-
-    return {
-      progressPercent: progress,
-      isThresholdMet: currentSupportLamports >= requiredThresholdLamports,
-      remainingSol: formatSOL(remaining),
-    };
-  }, [currentSupportLamports, requiredThresholdLamports]);
+  const remainingSol = useMemo(
+    () => formatSOL(remainingLamports),
+    [remainingLamports]
+  );
 
   // Clamp display to 100% for the arc (even if progress > 100%)
   const displayPercent = Math.min(progressPercent, 100) / 100;

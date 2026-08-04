@@ -20,6 +20,7 @@ import { PhaseStatusBadge } from "./PhaseStatusBadge";
 import { SupportDonut } from "./SupportDonut";
 import { StatBadge, StatCard } from "./StatCard";
 import { TimeRemainingCarousel } from "./TimeRemainingCarousel";
+import { computeSupportStats } from "./stats";
 
 /** Mock total active staked SOL across the network (in lamports) */
 // const MOCK_TOTAL_STAKED_LAMPORTS = 316_010_000 * LAMPORTS_PER_SOL; // 316.01M SOL
@@ -82,64 +83,25 @@ export function SupportPhaseProgress({ proposal }: SupportPhaseProgressProps) {
 
   const configData = governanceConfigQuery.data;
 
-  const stats = useMemo(() => {
-    // Use proposal's clusterSupportLamports as current support
-    const currentSupportLamports = proposal.clusterSupportLamports;
-    const totalStakedLamports = validatorsStake;
-    // Support threshold comes from the on-chain GlobalConfig; falls back to
-    // the current mainnet default until the config loads.
-    const thresholdPercent = supportThresholdPercentFromConfig(configData);
-
-    // Calculate required threshold in lamports
-    const requiredThresholdLamports =
-      totalStakedLamports * (thresholdPercent / 100);
-
-    // Progress toward threshold (can exceed 100%)
-    const progressPercent =
-      requiredThresholdLamports > 0
-        ? (currentSupportLamports / requiredThresholdLamports) * 100
-        : 0;
-
-    // Support as percent of total staked
-    const supportPercentOfTotal =
-      totalStakedLamports > 0
-        ? (currentSupportLamports / totalStakedLamports) * 100
-        : 0;
-
-    // Remaining SOL needed (0 if threshold met)
-    const remainingLamports = Math.max(
-      0,
-      requiredThresholdLamports - currentSupportLamports,
-    );
-
-    // Is threshold met?
-    const isThresholdMet = currentSupportLamports >= requiredThresholdLamports;
-
-    const validatorCount = supportAccounts.length;
-    const participationPercent = (validatorCount / numOfValidators) * 100;
-    const avgStakePerValidator =
-      validatorCount > 0 ? currentSupportLamports / validatorCount : 0;
-
-    return {
-      currentSupportLamports,
-      totalStakedLamports,
-      requiredThresholdLamports,
-      thresholdPercent,
-      progressPercent,
-      supportPercentOfTotal,
-      remainingLamports,
-      isThresholdMet,
-      validatorCount,
-      participationPercent,
-      avgStakePerValidator,
-    };
-  }, [
-    configData,
-    numOfValidators,
-    proposal.clusterSupportLamports,
-    supportAccounts.length,
-    validatorsStake,
-  ]);
+  const stats = useMemo(
+    () =>
+      computeSupportStats({
+        currentSupportLamports: proposal.clusterSupportLamports,
+        totalStakedLamports: validatorsStake,
+        // Support threshold comes from the on-chain GlobalConfig; falls back to
+        // the current mainnet default until the config loads.
+        thresholdPercent: supportThresholdPercentFromConfig(configData),
+        validatorCount: supportAccounts.length,
+        numOfValidators,
+      }),
+    [
+      configData,
+      numOfValidators,
+      proposal.clusterSupportLamports,
+      supportAccounts.length,
+      validatorsStake,
+    ],
+  );
 
   // Determine banner state
   const showBanner = stats.progressPercent >= 80 || stats.isThresholdMet;
@@ -187,8 +149,9 @@ export function SupportPhaseProgress({ proposal }: SupportPhaseProgressProps) {
         {/* Donut Chart */}
         <div className="flex flex-1 items-center justify-center">
           <SupportDonut
-            currentSupportLamports={stats.currentSupportLamports}
-            requiredThresholdLamports={stats.requiredThresholdLamports}
+            progressPercent={stats.progressPercent}
+            isThresholdMet={stats.isThresholdMet}
+            remainingLamports={stats.remainingLamports}
           />
         </div>
 
