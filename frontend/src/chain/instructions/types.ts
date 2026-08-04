@@ -182,10 +182,11 @@ const SUPPORT_CU_PER_SUPPORTER = 132;
 /**
  * Extra units for the call that crosses the threshold: it activates voting and,
  * unless the ballot box exists, creates it via the `init_ballot_box` CPI.
- * Measured at ~21-25k above a non-activating call. Always included — a caller
- * cannot know whether its own call will be the one that crosses.
+ * Measured at ~26.8k above a non-activating call, at the 64-operator whitelist
+ * maximum (init_ballot_box clones the whitelist, so a longer list costs more).
+ * Always included — a caller cannot know whether its own call will cross.
  */
-const SUPPORT_CU_ACTIVATION = 25_000;
+const SUPPORT_CU_ACTIVATION = 28_000;
 /** Covers supporters landing between reading the count and executing. */
 const SUPPORT_CU_HEADROOM_PERCENT = 15;
 /** Per-transaction maximum a client may request. */

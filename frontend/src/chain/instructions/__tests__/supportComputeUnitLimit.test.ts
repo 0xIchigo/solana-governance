@@ -3,7 +3,7 @@ import { supportComputeUnitLimit } from "../types";
 /** Peak measured in the program's tests/support_compute_budget.rs at the cap. */
 const MEASURED_AT_CAP = 284_953;
 /** Most expensive activating call measured in the program's tests/ncn_flow.rs. */
-const MEASURED_ACTIVATION = 47_610;
+const MEASURED_ACTIVATION = 49_473;
 
 describe("supportComputeUnitLimit", () => {
   it("covers the measured cost with headroom", () => {
@@ -32,7 +32,7 @@ describe("supportComputeUnitLimit", () => {
   it("matches the Rust mirror in svmgov/cli/src/constants.rs", () => {
     // Both clients must request the same budget for the same state; these are
     // the values support_compute_unit_limit() produces.
-    expect(supportComputeUnitLimit(0)).toBe(54_625);
-    expect(supportComputeUnitLimit(2_000)).toBe(358_225);
+    expect(supportComputeUnitLimit(0)).toBe(58_075);
+    expect(supportComputeUnitLimit(2_000)).toBe(361_675);
   });
 });

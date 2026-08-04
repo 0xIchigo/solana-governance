@@ -30,10 +30,12 @@ pub const SUPPORT_CU_PER_SUPPORTER: u32 = 132;
 
 /// Extra units for the call that crosses the support threshold: it activates
 /// voting and, unless the ballot box already exists, creates it through the
-/// `init_ballot_box` CPI. Measured at ~21-25k above a non-activating call in
-/// `tests/ncn_flow.rs`, which exercises the real CPI. Always included — a
-/// caller cannot know whether its own call will be the one that crosses.
-pub const SUPPORT_CU_ACTIVATION: u32 = 25_000;
+/// `init_ballot_box` CPI. Measured at ~26.8k above a non-activating call, at
+/// the 64-operator whitelist maximum — `init_ballot_box` clones the whitelist
+/// into the ballot box, so a longer list costs more. `tests/ncn_flow.rs`
+/// exercises the real CPI and asserts this covers it. Always included: a caller
+/// cannot know whether its own call will be the one that crosses.
+pub const SUPPORT_CU_ACTIVATION: u32 = 28_000;
 
 /// Margin over the modelled cost. Chiefly covers supporters that land between
 /// reading `num_supporters` and the transaction executing, at ~132 CU each.
@@ -67,7 +69,7 @@ mod tests {
     fn covers_measured_cost_with_headroom() {
         // No supporters yet, and this call could be the one that activates:
         // ncn_flow measured 43,817-47,610 CU for that path.
-        assert!(support_compute_unit_limit(0) > 47_610);
+        assert!(support_compute_unit_limit(0) > 49_473);
         assert!(support_compute_unit_limit(2_000) > MEASURED_AT_CAP);
     }
 
@@ -85,8 +87,8 @@ mod tests {
         // Both clients must request the same budget for the same state; these
         // values are pinned identically in the frontend's
         // supportComputeUnitLimit test.
-        assert_eq!(support_compute_unit_limit(0), 54_625);
-        assert_eq!(support_compute_unit_limit(2_000), 358_225);
+        assert_eq!(support_compute_unit_limit(0), 58_075);
+        assert_eq!(support_compute_unit_limit(2_000), 361_675);
     }
 
     #[test]

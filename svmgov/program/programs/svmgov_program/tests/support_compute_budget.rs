@@ -11,21 +11,6 @@ use {
     solana_signer::Signer, solana_transaction_error::TransactionError,
 };
 
-/// Mirrors `support_compute_unit_limit` in svmgov/cli/src/constants.rs and
-/// `supportComputeUnitLimit` in frontend/src/chain/instructions/types.ts. The
-/// clients scale their request with the supporter count; this suite is what
-/// justifies the model, so keep the constants in step.
-const SUPPORT_CU_BASE: u32 = 22_500;
-const SUPPORT_CU_PER_SUPPORTER: u32 = 132;
-const SUPPORT_CU_ACTIVATION: u32 = 25_000;
-const SUPPORT_CU_HEADROOM_PERCENT: u32 = 15;
-
-fn modelled_limit(num_supporters: u32) -> u64 {
-    let modelled =
-        SUPPORT_CU_BASE + SUPPORT_CU_PER_SUPPORTER * num_supporters + SUPPORT_CU_ACTIVATION;
-    (u64::from(modelled) * u64::from(100 + SUPPORT_CU_HEADROOM_PERCENT)).div_ceil(100)
-}
-
 const DEFAULT_COMPUTE_UNITS_PER_IX: u32 = 200_000;
 
 /// Tracks the supporter cap, so raising `MAX_SUPPORTERS_LIMIT` re-measures the
@@ -107,9 +92,9 @@ fn support_without_compute_budget_request_exhausts_default_limit() {
         &mut h.svm,
         &signer,
         &[
-            ComputeBudgetInstruction::set_compute_unit_limit(
-                modelled_limit(failed_at as u32) as u32
-            ),
+            ComputeBudgetInstruction::set_compute_unit_limit(modelled_support_limit(
+                failed_at as u32,
+            ) as u32),
             ix,
         ],
     );
@@ -147,7 +132,7 @@ fn support_at_max_supporters_fits_within_requested_limit() {
     assert_eq!(state.num_supporters as usize, VALIDATOR_COUNT);
     assert!(state.voting, "threshold should have activated voting");
 
-    let requested = modelled_limit(VALIDATOR_COUNT as u32);
+    let requested = modelled_support_limit(VALIDATOR_COUNT as u32);
     println!("peak at {VALIDATOR_COUNT} supporters: {peak_cu} CU; clients request {requested}");
     assert!(
         peak_cu < requested,
@@ -178,7 +163,7 @@ fn retally_at_max_supporters_fits_within_requested_limit() {
         VALIDATOR_COUNT - 1,
         meta.compute_units_consumed
     );
-    let requested = modelled_limit((VALIDATOR_COUNT - 1) as u32);
+    let requested = modelled_support_limit((VALIDATOR_COUNT - 1) as u32);
     assert!(
         meta.compute_units_consumed < requested,
         "retally consumed {} CU but the clients' model requests only {requested}",
