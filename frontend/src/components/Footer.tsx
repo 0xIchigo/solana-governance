@@ -10,18 +10,18 @@ type SocialLink = {
 
 const socialLinks: SocialLink[] = [
   {
-    href: "https://github.com/solana-labs",
-    ariaLabel: "GitHub Link",
+    href: "https://github.com/solana-foundation/solana-governance-proposals",
+    ariaLabel: "Solana Governance Proposals on GitHub",
     icon: <GitHubIcon />,
   },
   {
-    href: "https://twitter.com/solana",
-    ariaLabel: "Twitter Link",
+    href: "https://x.com/solana",
+    ariaLabel: "Solana on X",
     icon: <TwitterIcon />,
   },
   {
     href: "https://discord.gg/solana",
-    ariaLabel: "Discord Link",
+    ariaLabel: "Solana tech discord",
     icon: <DiscordIcon />,
   },
 ];
