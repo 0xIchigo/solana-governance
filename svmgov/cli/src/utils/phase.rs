@@ -123,9 +123,16 @@ pub fn phase_timeline(p: &PhaseInputs) -> PhaseTimeline {
         p.creation_epoch.saturating_add(p.max_support_epochs)
     };
 
-    let discussion_start = crossing.saturating_add(1);
-    let discussion_end = crossing.saturating_add(p.discussion_epochs);
-    let snapshot_epoch = discussion_end.saturating_add(p.snapshot_epoch_extension);
+    // Discussion begins in the crossing epoch itself: support closed partway
+    // through it, so that epoch is the tail of support and the head of
+    // discussion. `proposal_phase` reports Discussion there, and the timeline
+    // has to agree. Running discussion to the epoch before the snapshot keeps
+    // the two definitions in step for every epoch in between.
+    let snapshot_epoch = crossing
+        .saturating_add(p.discussion_epochs)
+        .saturating_add(p.snapshot_epoch_extension);
+    let discussion_start = crossing;
+    let discussion_end = snapshot_epoch.saturating_sub(1);
 
     let (voting_start, voting_end) = if p.voting {
         (p.start_epoch, p.end_epoch)
@@ -208,9 +215,32 @@ mod tests {
         let t = phase_timeline(&double_disinflation());
         assert!(!t.projected);
         assert_eq!(t.support, (1011, 1012));
-        assert_eq!(t.discussion, (1013, 1019));
+        // 1012 is shared: support closed partway through it and discussion
+        // began. Anything else would contradict proposal_phase(1012).
+        assert_eq!(t.discussion, (1012, 1019));
         assert_eq!(t.snapshot, (1020, 1020)); // snapshot_slot 440_641_000 / 432_000
         assert_eq!(t.voting, (1021, 1024));
+    }
+
+    #[test]
+    fn the_timeline_agrees_with_the_phase_at_every_epoch() {
+        // The bug this whole module exists to fix was a timeline that disagreed
+        // with the reported status, so pin that they cannot drift apart.
+        let p = double_disinflation();
+        let t = phase_timeline(&p);
+        for epoch in t.discussion.0..=t.discussion.1 {
+            assert_eq!(
+                proposal_phase(&p, epoch),
+                ProposalPhase::Discussion,
+                "epoch {epoch} is inside the discussion window"
+            );
+        }
+        for epoch in t.snapshot.0..=t.snapshot.1 {
+            assert_eq!(proposal_phase(&p, epoch), ProposalPhase::Snapshot);
+        }
+        for epoch in t.voting.0..t.voting.1 {
+            assert_eq!(proposal_phase(&p, epoch), ProposalPhase::Voting);
+        }
     }
 
     #[test]
@@ -218,7 +248,10 @@ mod tests {
         // The old output had voting (1021-1024) starting before the snapshot
         // (1026) and before discussion ended (1025).
         let t = phase_timeline(&double_disinflation());
-        assert!(t.support.1 < t.discussion.0);
+        // Support and discussion share the crossing epoch; everything else is
+        // strictly ordered.
+        assert!(t.support.1 <= t.discussion.0);
+        assert!(t.discussion.0 <= t.discussion.1);
         assert!(t.discussion.1 < t.snapshot.0);
         assert!(t.snapshot.1 < t.voting.0);
         assert!(t.voting.0 < t.voting.1);
@@ -274,6 +307,8 @@ mod tests {
         assert!(t.projected);
         // Latest possible crossing is the last epoch of the support window.
         assert_eq!(t.support, (1011, 1018));
+        assert_eq!(t.discussion, (1018, 1025));
+        assert_eq!(t.snapshot, (1026, 1026));
         assert_eq!(t.voting, (1027, 1030));
     }
 

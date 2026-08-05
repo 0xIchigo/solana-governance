@@ -124,8 +124,12 @@ fn print_proposal_detail(proposal_id: &str, proposal: &Proposal, current_epoch: 
     table.add_row(vec![
         Cell::new("Phase Timeline"),
         Cell::new(format!(
-            "support: epochs {}-{} | discussion: epochs {}-{} | snapshot: epoch {} | voting: epochs {}-{}{}",
+            "support: epochs {}-{}{} | discussion: epochs {}-{} | snapshot: epoch {} | voting: epochs {}-{}{}",
             timeline.support.0, timeline.support.1,
+            // The crossing epoch belongs to both phases: support closed partway
+            // through it. Say so, rather than leaving what looks like an
+            // off-by-one between the two ranges.
+            if timeline.projected { String::new() } else { format!(" (crossed in {})", timeline.support.1) },
             timeline.discussion.0, timeline.discussion.1,
             timeline.snapshot.0,
             timeline.voting.0, timeline.voting.1,
