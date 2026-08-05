@@ -39,7 +39,28 @@ pub async fn support_proposal(
     // read fails the instruction itself may still succeed, so fall back to the
     // program's supporter cap rather than aborting on a budgeting detail.
     let num_supporters = match program.account::<Proposal>(proposal_pubkey).await {
-        Ok(proposal) => proposal.num_supporters,
+        Ok(proposal) => {
+            // Refuse before building a transaction the program will reject.
+            // `voting` is set the moment support crosses the threshold, while
+            // start_epoch is still in the future, so the useful next action is
+            // to vote once voting opens — not to keep trying to support.
+            if proposal.finalized {
+                return Err(anyhow!(
+                    "Proposal {proposal_pubkey} is finalized; support is closed."
+                ));
+            }
+            if proposal.voting {
+                return Err(anyhow!(
+                    "Proposal {proposal_pubkey} has already reached its support threshold, so \
+                     support is closed. Voting runs from epoch {} to {} — use `svmgov cast-vote` \
+                     once epoch {} begins.",
+                    proposal.start_epoch,
+                    proposal.end_epoch,
+                    proposal.start_epoch,
+                ));
+            }
+            proposal.num_supporters
+        }
         Err(e) => {
             log::warn!(
                 "Could not read the supporter count for {proposal_pubkey}: {e}. Requesting the \

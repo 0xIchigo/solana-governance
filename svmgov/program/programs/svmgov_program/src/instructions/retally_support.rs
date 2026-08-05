@@ -62,9 +62,10 @@ impl<'info> RetallySupport<'info> {
 
         // Same eligibility gates as support_proposal: not yet voting, not
         // finalized, and inside the support window.
+        require!(!self.proposal.finalized, GovernanceError::ProposalFinalized);
         require!(
-            self.proposal.voting == false && self.proposal.finalized == false,
-            GovernanceError::ProposalClosed
+            !self.proposal.voting,
+            GovernanceError::SupportAlreadyActivated
         );
         check_support_window(
             clock.epoch,

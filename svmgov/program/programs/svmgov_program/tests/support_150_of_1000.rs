@@ -119,8 +119,14 @@ fn support_proposal_remeasures_prior_stake_across_epochs() {
     assert_eq!(after.snapshot_slot, expected_snapshot_slot(crossing_epoch));
 }
 
-/// Once voting is active, both `support_proposal` and `retally_support` return
-/// `ProposalClosed`.
+/// Once voting is active, both `support_proposal` and `retally_support` reject
+/// with `SupportAlreadyActivated`.
+///
+/// The error is deliberately not `ProposalClosed` ("the voting period has
+/// ended"): activation happens the moment the threshold is crossed, while
+/// `start_epoch` is still in the future, so at this point voting has not even
+/// begun. Reporting it as ended sent validators looking for the wrong problem
+/// (issue #141).
 #[test_log::test]
 fn support_and_retally_reject_after_voting_activated() {
     const CREATION_EPOCH: u64 = 10;
@@ -142,9 +148,19 @@ fn support_and_retally_reject_after_voting_activated() {
     retally_one(&mut h, proposal, UNDER_THRESHOLD, ballot_box);
     assert!(fetch_proposal(&h.svm, &proposal).voting);
 
+    // The transition state the issue describes: activated, but before
+    // start_epoch, so voting has not started.
+    let state = fetch_proposal(&h.svm, &proposal);
+    assert!(state.voting && !state.finalized);
+    assert!(
+        CREATION_EPOCH < state.start_epoch,
+        "current epoch must still be below start_epoch for this to be the \
+         activated-but-not-yet-voting case"
+    );
+
     let closed = TransactionError::InstructionError(
         1,
-        anchor_custom_error(GovernanceError::ProposalClosed),
+        anchor_custom_error(GovernanceError::SupportAlreadyActivated),
     );
     let support_err = try_support_one(&mut h, proposal, UNDER_THRESHOLD, ballot_box)
         .expect_err("support after voting should fail");
