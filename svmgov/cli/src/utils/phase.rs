@@ -97,56 +97,60 @@ pub fn proposal_phase(p: &PhaseInputs, current_epoch: u64) -> ProposalPhase {
     }
 }
 
-/// Inclusive epoch ranges for each phase. `projected` marks a schedule inferred
-/// from the config because the proposal has not activated yet — those epochs
-/// will shift if it crosses the threshold earlier than the window's last epoch.
+/// Epoch ranges for each phase.
+///
+/// The epoch support crossed the threshold is **not recorded on-chain** and
+/// cannot be recovered from `start_epoch`: `flush_merkle_root` re-anchors with a
+/// different formula from `activate_voting` (it omits `discussion_epochs`), and
+/// `update_config` can change the durations after a proposal has activated.
+/// Inverting the activation formula against a flushed or reconfigured proposal
+/// produces a crossing epoch that can predate the proposal itself. So once
+/// activated, the support window's end and the discussion window's start are
+/// reported as unknown rather than guessed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PhaseTimeline {
-    pub support: (u64, u64),
-    pub discussion: (u64, u64),
-    pub snapshot: (u64, u64),
+    pub created: u64,
+    /// `None` once activated — see the note above.
+    pub support: Option<(u64, u64)>,
+    /// Start is `None` once activated; the end is always known.
+    pub discussion: (Option<u64>, u64),
+    pub snapshot: u64,
     pub voting: (u64, u64),
     pub projected: bool,
 }
 
 pub fn phase_timeline(p: &PhaseInputs) -> PhaseTimeline {
-    // The epoch support crossed the threshold. `activate_voting` computes
-    // start_epoch = crossing + discussion_epochs + snapshot_epoch_extension + 1,
-    // so inverting it recovers the crossing epoch from on-chain state alone.
-    let crossing = if p.voting {
-        p.start_epoch
-            .saturating_sub(1)
-            .saturating_sub(p.discussion_epochs)
-            .saturating_sub(p.snapshot_epoch_extension)
-    } else {
-        // Not activated: project the latest it could still cross.
-        p.creation_epoch.saturating_add(p.max_support_epochs)
-    };
+    if p.voting {
+        // Everything here comes straight from stored state. `start_epoch - 1`
+        // is the snapshot epoch by construction in *both* the activate_voting
+        // and flush_merkle_root paths, so it survives a re-anchor.
+        let snapshot = p.start_epoch.saturating_sub(1);
+        return PhaseTimeline {
+            created: p.creation_epoch,
+            support: None,
+            discussion: (None, snapshot.saturating_sub(1)),
+            snapshot,
+            voting: (p.start_epoch, p.end_epoch),
+            projected: false,
+        };
+    }
 
-    // Discussion begins in the crossing epoch itself: support closed partway
-    // through it, so that epoch is the tail of support and the head of
-    // discussion. `proposal_phase` reports Discussion there, and the timeline
-    // has to agree. Running discussion to the epoch before the snapshot keeps
-    // the two definitions in step for every epoch in between.
-    let snapshot_epoch = crossing
+    // Not activated: project from the config, assuming the latest epoch it
+    // could still cross. Marked projected, and re-derived on every call, so a
+    // config change simply produces a new projection.
+    let crossing = p.creation_epoch.saturating_add(p.max_support_epochs);
+    let snapshot = crossing
         .saturating_add(p.discussion_epochs)
         .saturating_add(p.snapshot_epoch_extension);
-    let discussion_start = crossing;
-    let discussion_end = snapshot_epoch.saturating_sub(1);
-
-    let (voting_start, voting_end) = if p.voting {
-        (p.start_epoch, p.end_epoch)
-    } else {
-        let start = snapshot_epoch.saturating_add(1);
-        (start, start.saturating_add(p.voting_epochs))
-    };
+    let voting_start = snapshot.saturating_add(1);
 
     PhaseTimeline {
-        support: (p.creation_epoch, crossing),
-        discussion: (discussion_start, discussion_end),
-        snapshot: (snapshot_epoch, snapshot_epoch),
-        voting: (voting_start, voting_end),
-        projected: !p.voting,
+        created: p.creation_epoch,
+        support: Some((p.creation_epoch, crossing)),
+        discussion: (Some(crossing), snapshot.saturating_sub(1)),
+        snapshot,
+        voting: (voting_start, voting_start.saturating_add(p.voting_epochs)),
+        projected: true,
     }
 }
 
@@ -155,11 +159,14 @@ pub fn epochs_remaining(p: &PhaseInputs, current_epoch: u64) -> Option<(u64, &'s
     let timeline = phase_timeline(p);
     match proposal_phase(p, current_epoch) {
         ProposalPhase::Support => Some((
-            timeline.support.1.saturating_sub(current_epoch),
+            timeline
+                .support
+                .map(|(_, end)| end.saturating_sub(current_epoch))
+                .unwrap_or(0),
             "until the support window closes",
         )),
         ProposalPhase::Discussion => Some((
-            timeline.snapshot.0.saturating_sub(current_epoch),
+            timeline.snapshot.saturating_sub(current_epoch),
             "until snapshot",
         )),
         ProposalPhase::Snapshot => Some((
@@ -209,35 +216,69 @@ mod tests {
     }
 
     #[test]
-    fn recovers_the_crossing_epoch_from_on_chain_state() {
-        // start_epoch inverts back to the epoch support actually crossed, so
-        // the printed timeline matches reality instead of the config model.
+    fn an_activated_timeline_uses_only_stored_state() {
         let t = phase_timeline(&double_disinflation());
         assert!(!t.projected);
-        assert_eq!(t.support, (1011, 1012));
-        // 1012 is shared: support closed partway through it and discussion
-        // began. Anything else would contradict proposal_phase(1012).
-        assert_eq!(t.discussion, (1012, 1019));
-        assert_eq!(t.snapshot, (1020, 1020)); // snapshot_slot 440_641_000 / 432_000
+        assert_eq!(t.created, 1011);
+        // The epoch support crossed is not recorded on-chain, so it is not
+        // claimed. `start_epoch - 1` gives the snapshot epoch in both the
+        // activate_voting and flush_merkle_root paths; 1020 matches the stored
+        // snapshot_slot of 440_641_000.
+        assert_eq!(t.support, None);
+        assert_eq!(t.discussion, (None, 1019));
+        assert_eq!(t.snapshot, 1020);
         assert_eq!(t.voting, (1021, 1024));
     }
 
     #[test]
+    fn a_flushed_proposal_does_not_get_a_fabricated_crossing_epoch() {
+        // flush_merkle_root re-anchors with target = current + snapshot_extension,
+        // omitting discussion_epochs. Inverting activate_voting's formula against
+        // it produced a crossing epoch before the proposal existed: a recovery at
+        // epoch 1015 sets start_epoch 1017, and 1017 - 1 - 7 - 1 = 1008 < 1011.
+        let flushed = PhaseInputs {
+            start_epoch: 1017,
+            end_epoch: 1020,
+            ..double_disinflation()
+        };
+        let t = phase_timeline(&flushed);
+        assert_eq!(t.support, None);
+        assert_eq!(t.discussion.0, None);
+        // What is printed stays correct across the re-anchor.
+        assert_eq!(t.snapshot, 1016);
+        assert_eq!(t.voting, (1017, 1020));
+        assert!(t.created <= t.snapshot);
+    }
+
+    #[test]
+    fn changing_the_config_durations_cannot_corrupt_an_activated_timeline() {
+        // update_config can change durations after activation; the stored epochs
+        // were computed with the old ones, so the timeline must not depend on
+        // whatever the config says now.
+        let base = phase_timeline(&double_disinflation());
+        let reconfigured = phase_timeline(&PhaseInputs {
+            discussion_epochs: 2,
+            snapshot_epoch_extension: 4,
+            max_support_epochs: 1,
+            ..double_disinflation()
+        });
+        assert_eq!(base, reconfigured);
+    }
+
+    #[test]
     fn the_timeline_agrees_with_the_phase_at_every_epoch() {
-        // The bug this whole module exists to fix was a timeline that disagreed
-        // with the reported status, so pin that they cannot drift apart.
+        // The bug this module exists to fix was a timeline that disagreed with
+        // the reported status, so pin that they cannot drift apart.
         let p = double_disinflation();
         let t = phase_timeline(&p);
-        for epoch in t.discussion.0..=t.discussion.1 {
+        for epoch in t.discussion.0.unwrap_or(t.created)..=t.discussion.1 {
             assert_eq!(
                 proposal_phase(&p, epoch),
                 ProposalPhase::Discussion,
                 "epoch {epoch} is inside the discussion window"
             );
         }
-        for epoch in t.snapshot.0..=t.snapshot.1 {
-            assert_eq!(proposal_phase(&p, epoch), ProposalPhase::Snapshot);
-        }
+        assert_eq!(proposal_phase(&p, t.snapshot), ProposalPhase::Snapshot);
         for epoch in t.voting.0..t.voting.1 {
             assert_eq!(proposal_phase(&p, epoch), ProposalPhase::Voting);
         }
@@ -247,14 +288,25 @@ mod tests {
     fn the_timeline_is_internally_ordered() {
         // The old output had voting (1021-1024) starting before the snapshot
         // (1026) and before discussion ended (1025).
-        let t = phase_timeline(&double_disinflation());
-        // Support and discussion share the crossing epoch; everything else is
-        // strictly ordered.
-        assert!(t.support.1 <= t.discussion.0);
-        assert!(t.discussion.0 <= t.discussion.1);
-        assert!(t.discussion.1 < t.snapshot.0);
-        assert!(t.snapshot.1 < t.voting.0);
-        assert!(t.voting.0 < t.voting.1);
+        for p in [
+            double_disinflation(),
+            PhaseInputs {
+                voting: false,
+                start_epoch: 0,
+                end_epoch: 0,
+                ..double_disinflation()
+            },
+        ] {
+            let t = phase_timeline(&p);
+            if let Some((from, to)) = t.support {
+                assert!(from <= to);
+                assert!(to <= t.discussion.0.unwrap_or(to));
+            }
+            assert!(t.discussion.0.unwrap_or(t.discussion.1) <= t.discussion.1);
+            assert!(t.discussion.1 < t.snapshot);
+            assert!(t.snapshot < t.voting.0);
+            assert!(t.voting.0 < t.voting.1);
+        }
     }
 
     #[test]
@@ -306,9 +358,9 @@ mod tests {
         let t = phase_timeline(&p);
         assert!(t.projected);
         // Latest possible crossing is the last epoch of the support window.
-        assert_eq!(t.support, (1011, 1018));
-        assert_eq!(t.discussion, (1018, 1025));
-        assert_eq!(t.snapshot, (1026, 1026));
+        assert_eq!(t.support, Some((1011, 1018)));
+        assert_eq!(t.discussion, (Some(1018), 1025));
+        assert_eq!(t.snapshot, 1026);
         assert_eq!(t.voting, (1027, 1030));
     }
 

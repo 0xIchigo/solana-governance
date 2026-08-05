@@ -120,20 +120,31 @@ fn print_proposal_detail(proposal_id: &str, proposal: &Proposal, current_epoch: 
     ]);
     table.add_row(vec![Cell::new("Status"), Cell::new(status_display)]);
 
-    // Show phase timeline
+    // Show phase timeline. Once activated, the epoch support crossed is not
+    // recorded on-chain and cannot be recovered, so the support/discussion
+    // boundary is shown as unknown rather than guessed — see phase.rs.
+    let support_segment = match timeline.support {
+        Some((from, to)) => format!("support: epochs {}-{}", from, to),
+        None => format!("created: epoch {}", timeline.created),
+    };
+    let discussion_segment = match timeline.discussion.0 {
+        Some(from) => format!("discussion: epochs {}-{}", from, timeline.discussion.1),
+        None => format!("discussion: through epoch {}", timeline.discussion.1),
+    };
     table.add_row(vec![
         Cell::new("Phase Timeline"),
         Cell::new(format!(
-            "support: epochs {}-{}{} | discussion: epochs {}-{} | snapshot: epoch {} | voting: epochs {}-{}{}",
-            timeline.support.0, timeline.support.1,
-            // The crossing epoch belongs to both phases: support closed partway
-            // through it. Say so, rather than leaving what looks like an
-            // off-by-one between the two ranges.
-            if timeline.projected { String::new() } else { format!(" (crossed in {})", timeline.support.1) },
-            timeline.discussion.0, timeline.discussion.1,
-            timeline.snapshot.0,
-            timeline.voting.0, timeline.voting.1,
-            if timeline.projected { " (projected — set once support crosses)" } else { "" },
+            "{} | {} | snapshot: epoch {} | voting: epochs {}-{}{}",
+            support_segment,
+            discussion_segment,
+            timeline.snapshot,
+            timeline.voting.0,
+            timeline.voting.1,
+            if timeline.projected {
+                " (projected — set once support crosses)"
+            } else {
+                ""
+            },
         )),
     ]);
 
