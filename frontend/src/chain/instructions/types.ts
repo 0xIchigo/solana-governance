@@ -191,6 +191,12 @@ const SUPPORT_CU_ACTIVATION = 28_000;
 const SUPPORT_CU_HEADROOM_PERCENT = 15;
 /** Per-transaction maximum a client may request. */
 const MAX_COMPUTE_UNIT_LIMIT = 1_400_000;
+/**
+ * The program's `MAX_SUPPORTERS_LIMIT`. Used as the supporter count when the
+ * real one cannot be read, so the request still covers the largest list the
+ * program permits.
+ */
+export const MAX_SUPPORTERS = 2_000;
 
 /**
  * Compute-unit limit to request for a support against a proposal that currently

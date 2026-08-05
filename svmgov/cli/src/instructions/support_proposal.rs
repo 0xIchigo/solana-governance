@@ -9,7 +9,7 @@ use anyhow::{Result, anyhow};
 use ncn_snapshot::ID as SNAPSHOT_PROGRAM_ID;
 
 use crate::{
-    constants::support_compute_unit_limit,
+    constants::{support_compute_unit_limit, MAX_SUPPORTERS_LIMIT},
     svmgov_program::accounts::Proposal,
     svmgov_program::client::{accounts, args},
     utils::utils::{
@@ -35,12 +35,20 @@ pub async fn support_proposal(
     let global_config = fetch_global_config(&program).await?;
 
     // The handler re-tallies every existing supporter, so the compute budget is
-    // sized from the current list length rather than a flat worst case.
-    let proposal = program
-        .account::<Proposal>(proposal_pubkey)
-        .await
-        .map_err(|e| anyhow!("Failed to fetch proposal: {}", e))?;
-    let compute_unit_limit = support_compute_unit_limit(proposal.num_supporters);
+    // sized from the current list length rather than a flat worst case. If the
+    // read fails the instruction itself may still succeed, so fall back to the
+    // program's supporter cap rather than aborting on a budgeting detail.
+    let num_supporters = match program.account::<Proposal>(proposal_pubkey).await {
+        Ok(proposal) => proposal.num_supporters,
+        Err(e) => {
+            log::warn!(
+                "Could not read the supporter count for {proposal_pubkey}: {e}. Requesting the \
+                 compute budget for a full {MAX_SUPPORTERS_LIMIT}-supporter list."
+            );
+            MAX_SUPPORTERS_LIMIT
+        }
+    };
+    let compute_unit_limit = support_compute_unit_limit(num_supporters);
 
     let spinner = create_spinner("Supporting proposal...");
 

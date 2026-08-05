@@ -44,6 +44,11 @@ pub const SUPPORT_CU_HEADROOM_PERCENT: u32 = 15;
 /// Per-transaction maximum a client may request.
 pub const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 
+/// The program's `MAX_SUPPORTERS_LIMIT`. Used as the supporter count when the
+/// real one cannot be read, so the request still covers the largest list the
+/// program permits.
+pub const MAX_SUPPORTERS_LIMIT: u32 = 2_000;
+
 /// Compute-unit limit to request for a support/retally against a proposal that
 /// currently has `num_supporters` supporters.
 pub fn support_compute_unit_limit(num_supporters: u32) -> u32 {
@@ -89,6 +94,18 @@ mod tests {
         // supportComputeUnitLimit test.
         assert_eq!(support_compute_unit_limit(0), 58_075);
         assert_eq!(support_compute_unit_limit(2_000), 361_675);
+    }
+
+    #[test]
+    fn the_fallback_supporter_count_covers_the_worst_case() {
+        // When the supporter count cannot be read, callers pass
+        // MAX_SUPPORTERS_LIMIT, which must request at least as much as any
+        // real list could need.
+        let fallback = support_compute_unit_limit(MAX_SUPPORTERS_LIMIT);
+        assert!(fallback > MEASURED_AT_CAP);
+        for n in [0u32, 1, 500, 1_999, MAX_SUPPORTERS_LIMIT] {
+            assert!(support_compute_unit_limit(n) <= fallback);
+        }
     }
 
     #[test]

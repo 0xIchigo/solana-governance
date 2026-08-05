@@ -11,6 +11,7 @@ import {
   SupportProposalParams,
   TransactionResult,
   SNAPSHOT_PROGRAM_ID,
+  MAX_SUPPORTERS,
   supportComputeUnitLimit,
   ChainVoteAccountData,
 } from "./types";
@@ -52,9 +53,19 @@ export async function supportProposal(
   const splVoteAccount = new PublicKey(validatorVoteAccount.voteAccount);
 
   // The handler re-tallies every existing supporter, so the compute budget is
-  // sized from the current list length rather than a flat worst case.
-  const proposalAccount = await program.account.proposal.fetch(proposalPubkey);
-  const numSupporters = Number(proposalAccount.numSupporters ?? 0);
+  // sized from the current list length rather than a flat worst case. If the
+  // read fails the support itself may still succeed, so fall back to the
+  // program's supporter cap rather than aborting on a budgeting detail.
+  let numSupporters = MAX_SUPPORTERS;
+  try {
+    const proposalAccount = await program.account.proposal.fetch(proposalPubkey);
+    numSupporters = proposalAccount.numSupporters;
+  } catch (error) {
+    console.warn(
+      `Could not read the supporter count for ${proposalId}; requesting the compute budget for a full ${MAX_SUPPORTERS}-supporter list`,
+      error,
+    );
+  }
 
   // Derive support PDA - based on IDL, it uses proposal and signer
   const supportPda = deriveSupportPda(

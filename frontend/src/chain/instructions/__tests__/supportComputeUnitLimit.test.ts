@@ -1,4 +1,4 @@
-import { supportComputeUnitLimit } from "../types";
+import { MAX_SUPPORTERS, supportComputeUnitLimit } from "../types";
 
 /** Peak measured in the program's tests/support_compute_budget.rs at the cap. */
 const MEASURED_AT_CAP = 284_953;
@@ -23,6 +23,16 @@ describe("supportComputeUnitLimit", () => {
     expect(supportComputeUnitLimit(500)).toBeLessThan(
       supportComputeUnitLimit(2_000),
     );
+  });
+
+  it("the fallback supporter count covers the worst case", () => {
+    // supportProposal passes MAX_SUPPORTERS when the real count cannot be read,
+    // so that request must be at least as large as any real list would need.
+    const fallback = supportComputeUnitLimit(MAX_SUPPORTERS);
+    expect(fallback).toBeGreaterThan(MEASURED_AT_CAP);
+    for (const n of [0, 1, 500, 1_999, MAX_SUPPORTERS]) {
+      expect(supportComputeUnitLimit(n)).toBeLessThanOrEqual(fallback);
+    }
   });
 
   it("never exceeds the per-transaction maximum", () => {
