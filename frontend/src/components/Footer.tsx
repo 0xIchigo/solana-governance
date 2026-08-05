@@ -45,11 +45,21 @@ export default function Footer() {
   const renderLegalLinks = () => (
     <p className="legal-text">
       ©{currentYear !== null ? ` ${currentYear} ` : " "}Solana |{" "}
-      <a href="/terms" className="legal-link">
+      <a
+        href="https://solana.com/tos"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="legal-link"
+      >
         Terms
       </a>{" "}
       |{" "}
-      <a href="/privacy" className="legal-link">
+      <a
+        href="https://solana.com/privacy-policy"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="legal-link"
+      >
         Privacy Policy
       </a>
     </p>
