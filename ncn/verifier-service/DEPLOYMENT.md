@@ -5,6 +5,28 @@ This guide walks an operator through provisioning an AWS EC2 instance and runnin
 [← Back to Project README](../README.md)
 [→ Verifier Service README](README.md)
 
+## General Requirements
+
+While this guide uses AWS as the reference deployment, the verifier service runs on any Linux server meeting these minimum requirements:
+
+| Requirement | Minimum | Recommended |
+|-------------|---------|-------------|
+| CPU | 2 cores | 4+ cores |
+| RAM | 4 GB | 8 GB |
+| Storage | 40 GB SSD | 100+ GB NVMe |
+| Network | 100 Mbps | 1 Gbps |
+| OS | Ubuntu 22.04+ | Ubuntu 24.04 LTS |
+
+The 40 GB minimum matches the AWS gp3 sizing in step 1; provision more headroom on providers without elastic volume expansion. Storage grows with the database and retained snapshot uploads: `governance.db` reaches a few GB over months of operation, and each uploaded MetaMerkleSnapshot is up to the `UPLOAD_BODY_LIMIT` (100 MB default). Monitor `storage.free_storage_mb` via `/admin/stats`.
+
+### Non-AWS Deployment Notes
+
+- **SSL/TLS:** If not using Cloudflare or AWS ALB, configure a reverse proxy (nginx or caddy) with [Let's Encrypt](https://letsencrypt.org/) for HTTPS termination
+- **DNS:** Point your verifier domain to your server's public IP via an A record
+- **Firewall:** Open ports 80 (HTTP, required for Let's Encrypt HTTP-01 challenge and HTTP→HTTPS redirects) and 443 (HTTPS) and any custom ports for the verifier API. Restrict SSH (port 22) to known IPs
+- **Process management:** The recommended Docker deployment (`setup.sh`) already uses `--restart unless-stopped`, so Docker handles crash and reboot recovery. A systemd unit is only needed if you run the binary natively
+- **Bare metal / VPS providers:** Tested on Leaseweb. Any provider with the above specs will work
+
 ### Prerequisites
 
 - AWS account with permissions to create EC2 instances, Security Groups, and Elastic IPs
