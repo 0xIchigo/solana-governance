@@ -195,3 +195,72 @@ Notes:
 
 - No changes are required for the cleanup cron; it runs on the host and continues to manage `/srv/verifier/data/governance.db`.
 - For zero-downtime, you can adapt the script to start a secondary container (different port) and flip traffic via a proxy/ALB once healthy.
+
+## Monitoring & Alerting
+
+### What the service exposes
+
+The verifier service provides these monitoring surfaces:
+
+- `GET /healthz` — liveness check (no auth)
+- `GET /version` — crate version and git hash
+- `GET /meta` — metadata for the most recent snapshot, including its slot
+- `GET /admin/stats` — requires the `x-metrics-token` header, matched against the `METRICS_AUTH_TOKEN` environment variable. Returns `401` if the token is missing or wrong, and `503` if `METRICS_AUTH_TOKEN` is unset on the service. Response shape (from [`src/metrics.rs`](./src/metrics.rs)):
+
+  - `upload_total` — array of `{outcome, count}`; outcomes are `success`, `bad_request`, `unauthorized`, `internal`
+  - `proofs_not_found_total` — array of `{kind, count}`; kinds are `vote`, `stake`
+  - `storage.free_storage_mb` — free space in MB on the filesystem holding `DB_PATH`
+  - `storage.db_size_mb` — current size of the SQLite database
+  - `storage.db_path` — resolved database path
+
+  Note the storage fields are nested under `storage`, not top level.
+
+### Recommended Alerts
+
+All conditions below are derivable from the endpoints above plus container status:
+
+| Alert | Source | Condition | Severity |
+|-------|--------|-----------|----------|
+| Service down | `docker ps` / `/healthz` | Container not running or `/healthz` failing for >5 min | Critical |
+| Snapshot stale | `/meta` | Most recent snapshot slot older than ~2 epochs behind cluster tip | Warning |
+| Upload errors | `/admin/stats` `upload_total` | Error-outcome count increases across consecutive scrape intervals | Warning |
+| Low disk | `/admin/stats` `storage.free_storage_mb` | Free space below a fixed floor (e.g., < 20480 MB) | Warning |
+| DB growth | `/admin/stats` `storage.db_size_mb` | Sustained growth beyond expected snapshot retention | Info |
+
+Note: `storage.free_storage_mb` is an absolute value, not a percentage — set the threshold against your provisioned volume size. The counters are cumulative and held in process memory, so a container restart zeroes them: alert on the delta between scrapes rather than a "consecutive failures" count, which the service does not track, and treat a counter going backwards as a restart rather than an error.
+
+### Logging
+
+Under the recommended Docker deployment (`setup.sh`), logs go to the container:
+
+```bash
+sudo docker logs --tail=200 -f verifier
+```
+
+### Process Management
+
+`setup.sh` already starts the container with `--restart unless-stopped`, so Docker handles crash and reboot recovery — no additional process manager is needed for the standard deployment.
+
+If you instead run the binary natively (outside Docker), use a systemd unit, and note that the environment variables from section 6 (e.g., `OPERATOR_PUBKEY`) must be supplied via an `EnvironmentFile`:
+
+```ini
+[Unit]
+Description=NCN Verifier Service
+After=network.target
+
+[Service]
+User=sol
+EnvironmentFile=/etc/ncn-verifier/env
+ExecStart=/path/to/ncn-verifier
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable --now ncn-verifier
+journalctl -u ncn-verifier -f
+```
