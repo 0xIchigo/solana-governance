@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     anchor_client_setup,
     svmgov_program::accounts::{GlobalConfig, Proposal},
-    utils::phase::{epochs_remaining, phase_timeline, proposal_phase, PhaseInputs},
+    utils::phase::{PhaseInputs, PhaseTimeline, ProposalPhase},
     utils::utils::fetch_global_config,
 };
 
@@ -103,10 +103,9 @@ fn print_proposal_detail(proposal_id: &str, proposal: &Proposal, current_epoch: 
     let cluster_support_sol = proposal.cluster_support_lamports as f64 / 1_000_000_000.0;
     let proposer_stake_bp = proposal.proposer_stake_weight_bp as f64 / 100.0;
 
-    let inputs = phase_inputs(proposal, config);
-    let phase = proposal_phase(&inputs, current_epoch);
-    let status_display = phase.label();
-    let timeline = phase_timeline(&inputs);
+    let inputs = PhaseInputs::new(proposal, config);
+    let status_display = ProposalPhase::new(&inputs, current_epoch).label();
+    let timeline = PhaseTimeline::new(&inputs);
 
     table.add_row(vec![Cell::new("Proposal ID"), Cell::new(proposal_id)]);
     table.add_row(vec![Cell::new("Title"), Cell::new(&proposal.title)]);
@@ -149,7 +148,7 @@ fn print_proposal_detail(proposal_id: &str, proposal: &Proposal, current_epoch: 
     ]);
 
     // Show epochs remaining for current phase
-    let epochs_remaining = match epochs_remaining(&inputs, current_epoch) {
+    let epochs_remaining = match inputs.epochs_remaining(current_epoch) {
         Some((remaining, what)) => format!("{} epoch(s) {}", remaining, what),
         None => "—".to_string(),
     };
@@ -252,23 +251,8 @@ struct ProposalOutput {
     creation_timestamp: i64,
 }
 
-/// Bridges the generated account types into the pure phase logic.
-fn phase_inputs(proposal: &Proposal, config: &GlobalConfig) -> PhaseInputs {
-    PhaseInputs {
-        creation_epoch: proposal.creation_epoch,
-        start_epoch: proposal.start_epoch,
-        end_epoch: proposal.end_epoch,
-        voting: proposal.voting,
-        finalized: proposal.finalized,
-        max_support_epochs: config.max_support_epochs,
-        discussion_epochs: config.discussion_epochs,
-        snapshot_epoch_extension: config.snapshot_epoch_extension,
-        voting_epochs: config.voting_epochs,
-    }
-}
-
 fn get_proposal_status(proposal: &Proposal, current_epoch: u64, config: &GlobalConfig) -> &'static str {
-    proposal_phase(&phase_inputs(proposal, config), current_epoch).id()
+    ProposalPhase::new(&PhaseInputs::new(proposal, config), current_epoch).id()
 }
 
 pub async fn list_proposals(
@@ -415,7 +399,7 @@ fn print_proposals_table(proposals: &[(Pubkey, Proposal)], current_epoch: u64, c
     }
 
     for (pubkey, proposal) in proposals {
-        let status = proposal_phase(&phase_inputs(proposal, config), current_epoch).label();
+        let status = ProposalPhase::new(&PhaseInputs::new(proposal, config), current_epoch).label();
 
         // Truncate title if too long
         let title = if proposal.title.len() > 40 {
