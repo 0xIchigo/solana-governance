@@ -35,6 +35,25 @@ async fn ensure_ok(
     ))
 }
 
+/// Reject a proof that describes a different account than the one requested.
+/// The leaf seeds the MetaMerkleProof PDA and is what the program verifies
+/// against the consensus root, so its identity is load-bearing — a mismatch
+/// would otherwise surface much later as an on-chain constraint failure.
+fn ensure_matches_request(
+    returned: &str,
+    requested: &str,
+    kind: &str,
+    base_url: &str,
+) -> Result<()> {
+    if returned != requested {
+        return Err(anyhow!(
+            "The operator API at {base_url} returned a proof for {kind} {returned} but \
+             {requested} was requested."
+        ));
+    }
+    Ok(())
+}
+
 fn http_client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
@@ -119,6 +138,13 @@ pub async fn get_vote_account_proof(
         .await
         .map_err(|e| anyhow!("Malformed vote account proof from {}: {}", base_url, e))?;
 
+    ensure_matches_request(
+        &proof.meta_merkle_leaf.vote_account,
+        vote_account,
+        "vote account",
+        &base_url,
+    )?;
+
     log::debug!(
         "Got vote account proof: leaf stake={}, proof elements={}",
         proof.meta_merkle_leaf.active_stake,
@@ -153,6 +179,13 @@ pub async fn get_stake_account_proof(
         .json()
         .await
         .map_err(|e| anyhow!("Malformed stake account proof from {}: {}", base_url, e))?;
+
+    ensure_matches_request(
+        &proof.stake_merkle_leaf.stake_account,
+        stake_account,
+        "stake account",
+        &base_url,
+    )?;
 
     log::debug!(
         "Got stake account proof: leaf stake={}, proof elements={}",
@@ -353,6 +386,24 @@ mod tests {
     fn an_empty_proof_is_valid() {
         // A single-leaf tree yields no sibling hashes; that is not an error.
         assert_eq!(convert_merkle_proof_strings(&[]).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn a_proof_for_a_different_account_is_rejected() {
+        let requested = "11111111111111111111111111111111";
+        assert!(ensure_matches_request(requested, requested, "vote account", "http://x").is_ok());
+
+        let err = ensure_matches_request(
+            "SysvarC1ock11111111111111111111111111111111",
+            requested,
+            "vote account",
+            "http://x",
+        )
+        .expect_err("a proof for another account must be rejected");
+        // The message has to name both accounts, or the operator cannot debug it.
+        let msg = err.to_string();
+        assert!(msg.contains(requested), "{msg}");
+        assert!(msg.contains("SysvarC1ock"), "{msg}");
     }
 
     #[test]
