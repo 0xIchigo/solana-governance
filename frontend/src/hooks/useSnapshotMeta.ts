@@ -20,7 +20,9 @@ export const useSnapshotMeta = () => {
     // A custom RPC has no corresponding snapshot on the NCN API, so the request can only
     // fail. Skip it rather than spending three retries proving that.
     enabled: endpointType !== "custom",
-    retry: 3,
+    // Retry count comes from the query client default, which also skips retries once the
+    // upstream has answered definitively (see isPermanentNcnFailure).
+    //
     // Jittered so a fleet of clients retrying at once does not hammer an already-stalling
     // router in lockstep.
     retryDelay: (attempt) =>
