@@ -1,7 +1,7 @@
 //! Database migration constants and metadata
 
 /// Current database schema version
-pub const CURRENT_SCHEMA_VERSION: i32 = 1;
+pub const CURRENT_SCHEMA_VERSION: i32 = 2;
 
 /// Migration descriptions
 pub const MIGRATION_DESCRIPTIONS: &[&str] = &[

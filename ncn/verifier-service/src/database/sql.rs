@@ -59,7 +59,7 @@ pub const CREATE_DB_INDEXES: &[&str] = &[
 ];
 
 /// Adds `total_active_stake` to `snapshot_meta` for databases created before it
-/// existed. SQLite has no `ADD COLUMN IF NOT EXISTS`, so the migration is
-/// guarded by the schema version rather than being idempotent on its own.
+/// existed. SQLite has no `ADD COLUMN IF NOT EXISTS`, so `apply_migration_v2`
+/// checks `pragma_table_info` before running this.
 pub const ADD_SNAPSHOT_TOTAL_ACTIVE_STAKE_SQL: &str =
     "ALTER TABLE snapshot_meta ADD COLUMN total_active_stake INTEGER";

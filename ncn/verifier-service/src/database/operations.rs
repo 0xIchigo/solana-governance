@@ -284,9 +284,13 @@ impl SnapshotMetaRecord {
                 merkle_root: row.get("merkle_root"),
                 snapshot_hash: row.get("snapshot_hash"),
                 created_at: row.get("created_at"),
+                // Checked, mirroring the write side. A negative value cannot
+                // be written, but `as u64` would turn one into an enormous
+                // quorum denominator, silently reporting participation as ~0%.
                 total_active_stake: row
                     .get::<Option<i64>, _>("total_active_stake")
-                    .map(|v| v as u64),
+                    .map(u64::try_from)
+                    .transpose()?,
             }))
         } else {
             Ok(None)
