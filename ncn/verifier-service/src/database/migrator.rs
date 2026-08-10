@@ -6,8 +6,9 @@ use tracing::info;
 
 use super::constants::MIGRATION_DESCRIPTIONS;
 use super::sql::{
-    CREATE_DB_INDEXES, CREATE_MIGRATIONS_TABLE_SQL, CREATE_SNAPSHOT_META_TABLE_SQL,
-    CREATE_STAKE_ACCOUNTS_TABLE_SQL, CREATE_VOTE_ACCOUNTS_TABLE_SQL,
+    ADD_SNAPSHOT_TOTAL_ACTIVE_STAKE_SQL, CREATE_DB_INDEXES, CREATE_MIGRATIONS_TABLE_SQL,
+    CREATE_SNAPSHOT_META_TABLE_SQL, CREATE_STAKE_ACCOUNTS_TABLE_SQL,
+    CREATE_VOTE_ACCOUNTS_TABLE_SQL,
 };
 
 /// Run all pending database migrations
@@ -24,6 +25,9 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     // Apply migrations in order
     if current_version < 1 {
         apply_migration_v1(pool).await?;
+    }
+    if current_version < 2 {
+        apply_migration_v2(pool).await?;
     }
 
     info!("All migrations completed");
@@ -81,5 +85,44 @@ async fn apply_migration_v1(pool: &SqlitePool) -> Result<()> {
     tx.commit().await?;
 
     info!("Migration v1 completed successfully");
+    Ok(())
+}
+
+/// Apply migration version 2: record the snapshot's total active stake.
+///
+/// v1 databases already contain the column when created fresh, because
+/// `CREATE_SNAPSHOT_META_TABLE_SQL` was updated alongside this migration; the
+/// `ALTER TABLE` is therefore only reached by a database created before that
+/// change. Its failure is treated as fatal rather than ignored, so a genuinely
+/// broken schema surfaces at start-up instead of at query time.
+async fn apply_migration_v2(pool: &SqlitePool) -> Result<()> {
+    info!("Applying migration v2: {}", MIGRATION_DESCRIPTIONS[1]);
+
+    let mut tx = pool.begin().await?;
+
+    let already_present = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM pragma_table_info('snapshot_meta') WHERE name = 'total_active_stake'",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if already_present == 0 {
+        sqlx::query(ADD_SNAPSHOT_TOTAL_ACTIVE_STAKE_SQL)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    sqlx::query(
+        "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+    )
+    .bind(2)
+    .bind(chrono::Utc::now().to_rfc3339())
+    .bind(MIGRATION_DESCRIPTIONS[1])
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    info!("Migration v2 completed successfully");
     Ok(())
 }

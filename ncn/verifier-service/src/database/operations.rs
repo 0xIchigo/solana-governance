@@ -244,18 +244,20 @@ impl SnapshotMetaRecord {
 
         sqlx::query(
             "INSERT INTO snapshot_meta
-             (network, slot, merkle_root, snapshot_hash, created_at)
-             VALUES (?, ?, ?, ?, ?)
+             (network, slot, merkle_root, snapshot_hash, created_at, total_active_stake)
+             VALUES (?, ?, ?, ?, ?, ?)
              ON CONFLICT(network, slot) DO UPDATE SET
              merkle_root = excluded.merkle_root,
              snapshot_hash = excluded.snapshot_hash,
-             created_at = excluded.created_at",
+             created_at = excluded.created_at,
+             total_active_stake = excluded.total_active_stake",
         )
         .bind(&self.network)
         .bind(i64::try_from(self.slot)?)
         .bind(&self.merkle_root)
         .bind(&self.snapshot_hash)
         .bind(&self.created_at)
+        .bind(self.total_active_stake.map(i64::try_from).transpose()?)
         .execute(exec)
         .await?;
 
@@ -282,6 +284,9 @@ impl SnapshotMetaRecord {
                 merkle_root: row.get("merkle_root"),
                 snapshot_hash: row.get("snapshot_hash"),
                 created_at: row.get("created_at"),
+                total_active_stake: row
+                    .get::<Option<i64>, _>("total_active_stake")
+                    .map(|v| v as u64),
             }))
         } else {
             Ok(None)
