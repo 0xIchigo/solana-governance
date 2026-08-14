@@ -6,10 +6,6 @@ use log::info;
 use ncn_snapshot::{MetaMerkleLeaf, MetaMerkleProof, StakeMerkleLeaf};
 use serde::{Deserialize, Serialize};
 
-/// Bound on a single proof request. The operator fleet is externally operated
-/// and some endpoints have been observed accepting connections without ever
-/// responding; `reqwest::get` uses a client with no timeout, which would leave a
-/// validator hanging with no error at all. Mirrors `proposal_link.rs`.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Turn a non-success response into an actionable error. A stale operator that
@@ -35,25 +31,10 @@ async fn ensure_ok(
     ))
 }
 
-/// Reject a proof that describes a different account than the one requested.
-/// The leaf seeds the MetaMerkleProof PDA and is what the program verifies
-/// against the consensus root, so its identity is load-bearing — a mismatch
-/// would otherwise surface much later as an on-chain constraint failure.
-fn ensure_matches_request(
-    returned: &str,
-    requested: &str,
-    kind: &str,
-    base_url: &str,
-) -> Result<()> {
-    if returned != requested {
-        return Err(anyhow!(
-            "The operator API at {base_url} returned a proof for {kind} {returned} but \
-             {requested} was requested."
-        ));
-    }
-    Ok(())
-}
-
+/// The operator fleet is externally operated, and some endpoints have been
+/// observed accepting connections without ever responding. `reqwest::get` uses a
+/// client with no timeout, which leaves a validator hanging with no error at
+/// all, so every request goes through a client that is bounded.
 fn http_client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
@@ -112,6 +93,44 @@ pub struct StakeMerkleLeafData {
     pub active_stake: u64,
 }
 
+/// Rejects a proof whose leaf describes a vote account other than the one
+/// requested. The leaf seeds the `MetaMerkleProof` PDA and is what the program
+/// verifies against the consensus root, so its identity is load-bearing — a
+/// mismatch would otherwise surface much later as an on-chain constraint
+/// failure.
+fn ensure_vote_account_matches(
+    proof: &VoteAccountProofResponse,
+    requested: &str,
+    base_url: &str,
+) -> Result<()> {
+    let returned = &proof.meta_merkle_leaf.vote_account;
+    if returned != requested {
+        return Err(anyhow!(
+            "The operator API at {base_url} returned a proof for vote account {returned} but \
+             {requested} was requested."
+        ));
+    }
+    Ok(())
+}
+
+/// Rejects a proof whose leaf describes a stake account other than the one
+/// requested. See [`ensure_vote_account_matches`] for why the leaf's identity
+/// matters.
+fn ensure_stake_account_matches(
+    proof: &StakeAccountProofResponse,
+    requested: &str,
+    base_url: &str,
+) -> Result<()> {
+    let returned = &proof.stake_merkle_leaf.stake_account;
+    if returned != requested {
+        return Err(anyhow!(
+            "The operator API at {base_url} returned a proof for stake account {returned} but \
+             {requested} was requested."
+        ));
+    }
+    Ok(())
+}
+
 /// Get merkle proof for a vote account
 /// Endpoint: GET /proof/vote_account/:vote_account?snapshot_slot=...
 pub async fn get_vote_account_proof(
@@ -138,12 +157,7 @@ pub async fn get_vote_account_proof(
         .await
         .map_err(|e| anyhow!("Malformed vote account proof from {}: {}", base_url, e))?;
 
-    ensure_matches_request(
-        &proof.meta_merkle_leaf.vote_account,
-        vote_account,
-        "vote account",
-        &base_url,
-    )?;
+    ensure_vote_account_matches(&proof, vote_account, &base_url)?;
 
     log::debug!(
         "Got vote account proof: leaf stake={}, proof elements={}",
@@ -180,12 +194,7 @@ pub async fn get_stake_account_proof(
         .await
         .map_err(|e| anyhow!("Malformed stake account proof from {}: {}", base_url, e))?;
 
-    ensure_matches_request(
-        &proof.stake_merkle_leaf.stake_account,
-        stake_account,
-        "stake account",
-        &base_url,
-    )?;
+    ensure_stake_account_matches(&proof, stake_account, &base_url)?;
 
     log::debug!(
         "Got stake account proof: leaf stake={}, proof elements={}",
@@ -388,19 +397,65 @@ mod tests {
         assert_eq!(convert_merkle_proof_strings(&[]).unwrap().len(), 0);
     }
 
-    #[test]
-    fn a_proof_for_a_different_account_is_rejected() {
-        let requested = "11111111111111111111111111111111";
-        assert!(ensure_matches_request(requested, requested, "vote account", "http://x").is_ok());
+    const OTHER_ACCOUNT: &str = "SysvarC1ock11111111111111111111111111111111";
 
-        let err = ensure_matches_request(
-            "SysvarC1ock11111111111111111111111111111111",
+    fn vote_account_proof(vote_account: &str) -> VoteAccountProofResponse {
+        VoteAccountProofResponse {
+            network: "mainnet".to_string(),
+            snapshot_slot: 1,
+            meta_merkle_leaf: MetaMerkleLeafData {
+                vote_account: vote_account.to_string(),
+                ..leaf("11111111111111111111111111111111")
+            },
+            meta_merkle_proof: vec![],
+        }
+    }
+
+    fn stake_account_proof(stake_account: &str) -> StakeAccountProofResponse {
+        StakeAccountProofResponse {
+            network: "mainnet".to_string(),
+            snapshot_slot: 1,
+            stake_merkle_leaf: StakeMerkleLeafData {
+                voting_wallet: "11111111111111111111111111111111".to_string(),
+                stake_account: stake_account.to_string(),
+                active_stake: 1,
+            },
+            stake_merkle_proof: vec![],
+            vote_account: "11111111111111111111111111111111".to_string(),
+        }
+    }
+
+    #[test]
+    fn a_vote_account_proof_for_a_different_account_is_rejected() {
+        let requested = "11111111111111111111111111111111";
+        assert!(
+            ensure_vote_account_matches(&vote_account_proof(requested), requested, "http://x")
+                .is_ok()
+        );
+
+        let err =
+            ensure_vote_account_matches(&vote_account_proof(OTHER_ACCOUNT), requested, "http://x")
+                .expect_err("a proof for another account must be rejected");
+        // The message has to name both accounts, or the operator cannot debug it.
+        let msg = err.to_string();
+        assert!(msg.contains(requested), "{msg}");
+        assert!(msg.contains("SysvarC1ock"), "{msg}");
+    }
+
+    #[test]
+    fn a_stake_account_proof_for_a_different_account_is_rejected() {
+        let requested = "11111111111111111111111111111111";
+        assert!(
+            ensure_stake_account_matches(&stake_account_proof(requested), requested, "http://x")
+                .is_ok()
+        );
+
+        let err = ensure_stake_account_matches(
+            &stake_account_proof(OTHER_ACCOUNT),
             requested,
-            "vote account",
             "http://x",
         )
         .expect_err("a proof for another account must be rejected");
-        // The message has to name both accounts, or the operator cannot debug it.
         let msg = err.to_string();
         assert!(msg.contains(requested), "{msg}");
         assert!(msg.contains("SysvarC1ock"), "{msg}");

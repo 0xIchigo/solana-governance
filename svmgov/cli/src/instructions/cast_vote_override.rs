@@ -119,8 +119,7 @@ pub async fn cast_vote_override(
         info!("Creating meta merkle proof account");
 
         // Validate every field from the operator API rather than assuming it is
-        // well-formed: these converters return a clear error, where the const
-        // base58 decoder would panic on a malformed response.
+        // well-formed
         let meta_merkle_leaf = MetaMerkleLeaf::try_from(&meta_merkle_proof.meta_merkle_leaf)?;
         let meta_merkle_proof_hashes =
             convert_merkle_proof_strings(&meta_merkle_proof.meta_merkle_proof)?;
