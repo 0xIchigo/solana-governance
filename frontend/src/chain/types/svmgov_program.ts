@@ -2664,18 +2664,6 @@ export type SvmgovProgram = {
             "type": "pubkey"
           },
           {
-            "name": "forVotesBp",
-            "type": "u64"
-          },
-          {
-            "name": "againstVotesBp",
-            "type": "u64"
-          },
-          {
-            "name": "abstainVotesBp",
-            "type": "u64"
-          },
-          {
             "name": "forVotesLamports",
             "type": "u64"
           },

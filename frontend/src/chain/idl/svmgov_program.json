@@ -2658,18 +2658,6 @@
             "type": "pubkey"
           },
           {
-            "name": "for_votes_bp",
-            "type": "u64"
-          },
-          {
-            "name": "against_votes_bp",
-            "type": "u64"
-          },
-          {
-            "name": "abstain_votes_bp",
-            "type": "u64"
-          },
-          {
             "name": "for_votes_lamports",
             "type": "u64"
           },
