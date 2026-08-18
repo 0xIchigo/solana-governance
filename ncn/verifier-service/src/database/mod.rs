@@ -109,7 +109,9 @@ CREATE TABLE snapshot_meta (
             .connect_with(
                 SqliteConnectOptions::from_str(&format!("sqlite:{path}"))
                     .unwrap()
-                    .create_if_missing(true),
+                    .create_if_missing(true)
+                    // Match what the pre-v2 service left on disk.
+                    .journal_mode(SqliteJournalMode::Wal),
             )
             .await
             .unwrap();
