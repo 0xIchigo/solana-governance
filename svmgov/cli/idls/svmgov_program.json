@@ -114,7 +114,6 @@
         },
         {
           "name": "vote_override_cache",
-          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -853,7 +852,6 @@
         },
         {
           "name": "validator_vote",
-          "writable": true,
           "pda": {
             "seeds": [
               {

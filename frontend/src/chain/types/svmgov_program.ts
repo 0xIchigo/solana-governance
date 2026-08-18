@@ -120,7 +120,6 @@ export type SvmgovProgram = {
         },
         {
           "name": "voteOverrideCache",
-          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -859,7 +858,6 @@ export type SvmgovProgram = {
         },
         {
           "name": "validatorVote",
-          "writable": true,
           "pda": {
             "seeds": [
               {
