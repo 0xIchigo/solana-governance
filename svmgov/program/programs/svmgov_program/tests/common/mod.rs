@@ -549,7 +549,7 @@ pub fn create_proposal(h: &mut Harness, seed: u64, title: &str) -> Address {
             h.global_config,
             seed,
             title,
-            "https://github.com/solana-foundation/solana-governance",
+            "https://github.com/solana-foundation/solana-governance-proposals/blob/commit-sha/proposals/title.md",
         )],
     );
     proposal
