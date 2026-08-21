@@ -158,6 +158,15 @@ export interface NetworkMetaResponse {
   merkle_root: string;
   snapshot_hash: string;
   created_at: string;
+  /**
+   * Total active stake across every leaf in this snapshot, in lamports — the
+   * denominator SGP-0001 Art. IV.3 measures quorum against.
+   *
+   * `null` for snapshots uploaded before the verifier recorded it; those cannot
+   * be back-filled without the original file. Absent entirely when talking to a
+   * verifier that predates the field, hence the optional.
+   */
+  total_active_stake?: number | null;
 }
 
 // Constants
