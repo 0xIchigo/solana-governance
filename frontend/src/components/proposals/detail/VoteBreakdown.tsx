@@ -46,9 +46,8 @@ const VoteBreakdown = ({
   const { data: hasUserVoted = false, isLoading: isLoadingHasUserVoted } =
     useHasUserVoted(proposal?.publicKey?.toBase58());
 
-  // The snapshot's own total, not a live cluster sum: SGP-0001 Art. IV.2 fixes
-  // the stake distribution for the whole voting period, so a live total would
-  // move the percentages for reasons unrelated to voting.
+  // The proposal's own snapshot total, not a live cluster sum: Art. IV.2 fixes
+  // the distribution for the voting period, so a live total drifts.
   const { data: meta, isLoading: isLoadingMeta } = useSnapshotMeta();
   const totalActiveStake = resolveQuorumDenominator(
     meta,
@@ -99,7 +98,9 @@ const VoteBreakdown = ({
               forLamports={proposal.forVotesLamports}
               againstLamports={proposal.againstVotesLamports}
               abstainLamports={proposal.abstainVotesLamports}
-              totalLamports={quorum?.known ? quorum.totalActiveStake : undefined}
+              totalLamports={
+                quorum?.known ? quorum.totalActiveStake : undefined
+              }
             />
           )}
         </div>
@@ -131,9 +132,8 @@ const VoteBreakdown = ({
                     {quorum.isMet ? " — quorum met" : ""}
                   </span>
                 ) : (
-                  // Deliberately not "not recorded": the total may well exist,
-                  // just for a snapshot other than this proposal's, which
-                  // `/meta` cannot currently be asked for.
+                  // Not "not recorded": the total may exist, just for another
+                  // snapshot, which `/meta` cannot be asked for.
                   <span className="text-white/60">
                     {UNKNOWN_PERCENTAGE} (snapshot total unavailable)
                   </span>

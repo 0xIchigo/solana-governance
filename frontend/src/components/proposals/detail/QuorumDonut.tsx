@@ -77,9 +77,8 @@ export default function QuorumDonut({
     return { chartData, totalLamports, totalSol };
   }, [totalLamports, forLamports, againstLamports, abstainLamports]);
 
-  // The marker sits at the one-third of network stake SGP-0001 Art. IV.3
-  // requires. The arcs are drawn against the same total, so their combined
-  // length reaching the marker is exactly quorum being met.
+  // Arcs are drawn against the same total, so their combined length reaching
+  // this marker is exactly quorum being met.
   const quorumAngleDegrees = QUORUM_FRACTION * 360;
 
   // SVG Donut Chart calculations
@@ -118,7 +117,7 @@ export default function QuorumDonut({
   const againstOffset = to([forP], (fp) => -fp * circumference);
   const abstainOffset = to(
     [forP, againstP],
-    (fp, ap) => -(fp + ap) * circumference
+    (fp, ap) => -(fp + ap) * circumference,
   );
 
   // Static angles for gradients
@@ -201,7 +200,7 @@ export default function QuorumDonut({
             strokeLinecap="round"
             strokeDasharray={to(
               [abstainLength],
-              (l) => `${l} ${circumference}`
+              (l) => `${l} ${circumference}`,
             )}
             style={{ strokeDashoffset: abstainOffset }}
           />
@@ -216,7 +215,7 @@ export default function QuorumDonut({
             strokeLinecap="round"
             strokeDasharray={to(
               [againstLength],
-              (l) => `${l} ${circumference}`
+              (l) => `${l} ${circumference}`,
             )}
             style={{ strokeDashoffset: againstOffset }}
           />
