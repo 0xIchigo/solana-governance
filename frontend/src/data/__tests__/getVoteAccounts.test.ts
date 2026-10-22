@@ -28,9 +28,6 @@ function rawVoteAccount(): RawVoteAccountDataAccount {
 
 describe("mapVoteAccountDto", () => {
   it("leaves validator metadata unset", () => {
-    // None of this is on chain. Filling it with zeros renders a 0% commission
-    // validator with no credits, which reads as real data rather than as
-    // metadata that has not been joined yet.
     const mapped = mapVoteAccountDto(rawVoteAccount());
 
     expect(mapped.commission).toBeUndefined();

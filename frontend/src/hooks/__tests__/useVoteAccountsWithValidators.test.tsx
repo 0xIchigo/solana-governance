@@ -75,9 +75,6 @@ afterEach(() => {
 
 describe("useVoteAccountsWithValidators", () => {
   it("matches a vote record on the validator identity it records", async () => {
-    // The reported bug: the lookup compared the recorded identity against
-    // vote_identity, which holds the vote account address, so no row ever
-    // matched and every one kept the placeholder metadata.
     const { result } = renderWith([validator], [voteRecord]);
 
     await waitFor(() => expect(result.current.data).toBeDefined());
@@ -116,8 +113,6 @@ describe("useVoteAccountsWithValidators", () => {
   });
 
   it("leaves metadata unset when no validator matches", async () => {
-    // Zeros here would render as a real 0% commission with no credits, which is
-    // indistinguishable from a validator that genuinely has those values.
     const { result } = renderWith([OTHER_VALIDATOR], [voteRecord]);
 
     await waitFor(() => expect(result.current.data).toBeDefined());
@@ -130,7 +125,6 @@ describe("useVoteAccountsWithValidators", () => {
   });
 
   it("reports how many records went unmatched", async () => {
-    // The previous code swallowed this, so a wholly broken join looked normal.
     const warn = jest.spyOn(console, "warn");
 
     const { result } = renderWith([OTHER_VALIDATOR], [voteRecord]);
